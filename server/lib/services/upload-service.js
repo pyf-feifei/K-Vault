@@ -8,8 +8,8 @@ class UploadService {
     this.storageFactory = storageFactory;
   }
 
-  resolveStorage({ storageId, storageMode }) {
-    const storageConfig = this.storageRepo.resolveStorageSelection({ storageId, storageMode });
+  async resolveStorage({ storageId, storageMode }) {
+    const storageConfig = await this.storageRepo.resolveStorageSelection({ storageId, storageMode });
     if (!storageConfig) {
       throw new Error('No available storage configuration.');
     }
@@ -25,7 +25,7 @@ class UploadService {
     storageMode,
     folderPath,
   }) {
-    const storageConfig = this.resolveStorage({ storageId, storageMode });
+    const storageConfig = await this.resolveStorage({ storageId, storageMode });
     const adapter = this.storageFactory.createAdapter(storageConfig);
     const storageType = normalizeStorageType(storageConfig.type);
     const normalizedFolderPath = normalizeFolderPath(folderPath);
@@ -138,7 +138,7 @@ class UploadService {
     const file = this.fileRepo.getById(fileId);
     if (!file) return null;
 
-    const storageConfig = this.storageRepo.getById(file.storage_config_id, true);
+    const storageConfig = await this.storageRepo.getById(file.storage_config_id, true);
     if (!storageConfig) {
       throw new Error('Storage config referenced by file not found.');
     }
@@ -162,7 +162,7 @@ class UploadService {
     const file = this.fileRepo.getById(fileId);
     if (!file) return { deleted: false, reason: 'not-found' };
 
-    const storageConfig = this.storageRepo.getById(file.storage_config_id, true);
+    const storageConfig = await this.storageRepo.getById(file.storage_config_id, true);
     if (storageConfig) {
       const adapter = this.storageFactory.createAdapter(storageConfig);
       try {

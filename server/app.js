@@ -8,9 +8,9 @@ const { normalizeFolderPath } = require('./lib/repos/file-repo');
 const { toStorageErrorPayload } = require('./lib/utils/storage-error');
 const { createShareSignature, verifyShareSignature } = require('./lib/utils/share-link');
 
-function createApp() {
+async function createApp() {
   const app = new Hono();
-  const container = createContainer(process.env);
+  const container = await createContainer(process.env);
 
   app.use('*', cors({
     origin: (origin) => origin || '*',
@@ -127,9 +127,9 @@ function createApp() {
     return Math.max(min, Math.min(max, parsed));
   }
 
-  function authResult(c) {
+  async function authResult(c) {
     const { authService } = getServices(c);
-    return authService.checkAuthentication(c.req.raw);
+    return await authService.checkAuthentication(c.req.raw);
   }
 
   function isTruthy(value) {
@@ -138,8 +138,8 @@ function createApp() {
     return ['1', 'true', 'yes', 'on'].includes(normalized);
   }
 
-  function requireAuth(c) {
-    const result = authResult(c);
+  async function requireAuth(c) {
+    const result = await authResult(c);
     if (!result.authenticated) {
       return jsonError(c, 401, 'UNAUTHORIZED', 'Authentication required.', result.reason || 'Unauthorized');
     }
@@ -388,9 +388,9 @@ function createApp() {
   }
 
   // --- Auth ---
-  app.get('/api/auth/check', (c) => {
+  app.get('/api/auth/check', async (c) => {
     const { authService, guestService } = getServices(c);
-    const auth = authService.checkAuthentication(c.req.raw);
+    const auth = await authService.checkAuthentication(c.req.raw);
 
     return c.json({
       authenticated: auth.authenticated,
@@ -431,16 +431,16 @@ function createApp() {
       );
     }
 
-    const session = authService.createSession(username);
+    const session = await authService.createSession(username);
     c.header('Set-Cookie', authService.createSessionCookie(session.token));
 
     return c.json({ success: true, message: 'Login successful.' });
   });
 
-  app.post('/api/auth/logout', (c) => {
+  app.post('/api/auth/logout', async (c) => {
     const { authService } = getServices(c);
     const token = authService.getSessionTokenFromRequest(c.req.raw);
-    authService.deleteSession(token);
+    await authService.deleteSession(token);
 
     const clearCookies = authService.createClearSessionCookies();
     const response = c.json({ success: true, message: 'Logged out.' });
@@ -462,18 +462,18 @@ function createApp() {
     return c.text(authService.isAuthRequired() ? 'true' : 'Not using basic auth.');
   });
 
-  app.get('/api/manage/login', (c) => {
-    const auth = authResult(c);
+  app.get('/api/manage/login', async (c) => {
+    const auth = await authResult(c);
     if (auth.authenticated) {
       return c.redirect('/admin.html', 302);
     }
     return c.redirect('/login.html?redirect=%2Fadmin.html', 302);
   });
 
-  const handleManageLogout = (c) => {
+  const handleManageLogout = async (c) => {
     const { authService } = getServices(c);
     const token = authService.getSessionTokenFromRequest(c.req.raw);
-    authService.deleteSession(token);
+    await authService.deleteSession(token);
     const clearCookies = authService.createClearSessionCookies();
     const response = c.redirect('/login.html', 302);
     response.headers.append('Set-Cookie', clearCookies[0]);
@@ -484,7 +484,7 @@ function createApp() {
   app.post('/api/manage/logout', handleManageLogout);
 
   const getSettingsHandler = async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { settingsStore } = getServices(c);
@@ -497,7 +497,7 @@ function createApp() {
   };
 
   const setSettingsHandler = async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { settingsStore } = getServices(c);
@@ -522,7 +522,7 @@ function createApp() {
   };
 
   const deleteSettingsHandler = async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { settingsStore } = getServices(c);
@@ -574,7 +574,7 @@ function createApp() {
   });
 
   app.post('/api/ui-config', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const body = await c.req.json().catch(() => ({}));
@@ -588,22 +588,22 @@ function createApp() {
   });
 
   // --- Storage configs ---
-  app.get('/api/storage/list', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/storage/list', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageRepo } = getServices(c);
-    return c.json({ success: true, items: storageRepo.list(false) });
+    return c.json({ success: true, items: await storageRepo.list(false) });
   });
 
   app.post('/api/storage', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageRepo } = getServices(c);
     const body = await c.req.json();
 
-    const created = storageRepo.create({
+    const created = await storageRepo.create({
       name: body.name,
       type: body.type,
       config: body.config || {},
@@ -612,18 +612,18 @@ function createApp() {
       metadata: body.metadata || {},
     });
 
-    return c.json({ success: true, item: storageRepo.getById(created.id, false) });
+    return c.json({ success: true, item: await storageRepo.getById(created.id, false) });
   });
 
   app.put('/api/storage/:id', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageRepo } = getServices(c);
     const id = c.req.param('id');
     const body = await c.req.json();
 
-    const updated = storageRepo.update(id, {
+    const updated = await storageRepo.update(id, {
       name: body.name,
       type: body.type,
       config: body.config,
@@ -636,18 +636,18 @@ function createApp() {
       return jsonError(c, 404, 'STORAGE_NOT_FOUND', 'Storage config not found.', `Storage config "${id}" does not exist.`);
     }
 
-    return c.json({ success: true, item: storageRepo.getById(id, false) });
+    return c.json({ success: true, item: await storageRepo.getById(id, false) });
   });
 
-  app.delete('/api/storage/:id', (c) => {
-    const unauthorized = requireAuth(c);
+  app.delete('/api/storage/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageRepo } = getServices(c);
     const id = c.req.param('id');
     let deleted = false;
     try {
-      deleted = storageRepo.delete(id);
+      deleted = await storageRepo.delete(id);
     } catch (error) {
       return jsonError(
         c,
@@ -665,12 +665,12 @@ function createApp() {
   });
 
   app.post('/api/storage/:id/test', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageRepo, storageFactory } = getServices(c);
     const id = c.req.param('id');
-    const item = storageRepo.getById(id, true);
+    const item = await storageRepo.getById(id, true);
     if (!item) {
       return jsonError(c, 404, 'STORAGE_NOT_FOUND', 'Storage config not found.', `Storage config "${id}" does not exist.`);
     }
@@ -692,22 +692,22 @@ function createApp() {
     }
   });
 
-  app.post('/api/storage/default/:id', (c) => {
-    const unauthorized = requireAuth(c);
+  app.post('/api/storage/default/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageRepo } = getServices(c);
     const id = c.req.param('id');
-    const item = storageRepo.setDefault(id);
+    const item = await storageRepo.setDefault(id);
     if (!item) {
       return jsonError(c, 404, 'STORAGE_NOT_FOUND', 'Storage config not found.', `Storage config "${id}" does not exist.`);
     }
 
-    return c.json({ success: true, item: storageRepo.getById(id, false) });
+    return c.json({ success: true, item: await storageRepo.getById(id, false) });
   });
 
   app.post('/api/storage/test', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { storageFactory } = getServices(c);
@@ -759,7 +759,7 @@ function createApp() {
 
     status.settings = await settingsStore.healthCheck();
 
-    const configs = storageRepo.list(true);
+    const configs = await storageRepo.list(true);
     const byType = {
       telegram: configs.find((item) => item.type === 'telegram') || null,
       r2: configs.find((item) => item.type === 'r2') || null,
@@ -873,7 +873,7 @@ function createApp() {
   // --- Upload ---
   app.post('/upload', async (c) => {
     const { authService, guestService, uploadService } = getServices(c);
-    const auth = authService.checkAuthentication(c.req.raw);
+    const auth = await authService.checkAuthentication(c.req.raw);
 
     const body = await c.req.parseBody();
     const file = body.file;
@@ -895,7 +895,7 @@ function createApp() {
     }
 
     if (!auth.authenticated) {
-      const guestCheck = guestService.checkUploadAllowed(c.req.raw, fileSize);
+      const guestCheck = await guestService.checkUploadAllowed(c.req.raw, fileSize);
       if (!guestCheck.allowed) {
         return jsonError(c, guestCheck.status || 403, 'GUEST_REJECTED', 'Guest upload is not allowed.', guestCheck.reason);
       }
@@ -918,7 +918,7 @@ function createApp() {
     }
 
     if (!auth.authenticated) {
-      guestService.incrementUsage(c.req.raw);
+      await guestService.incrementUsage(c.req.raw);
     }
 
     return uploadSuccessResponse(c, result);
@@ -926,7 +926,7 @@ function createApp() {
 
   app.post('/api/upload-from-url', async (c) => {
     const { authService, guestService, uploadService } = getServices(c);
-    const auth = authService.checkAuthentication(c.req.raw);
+    const auth = await authService.checkAuthentication(c.req.raw);
     const payload = await c.req.json().catch(() => ({}));
 
     if (!payload.url) {
@@ -934,7 +934,7 @@ function createApp() {
     }
 
     if (!auth.authenticated) {
-      const guestCheck = guestService.checkUploadAllowed(c.req.raw, 0);
+      const guestCheck = await guestService.checkUploadAllowed(c.req.raw, 0);
       if (!guestCheck.allowed) {
         return jsonError(c, guestCheck.status || 403, 'GUEST_REJECTED', 'Guest upload is not allowed.', guestCheck.reason);
       }
@@ -955,7 +955,7 @@ function createApp() {
     }
 
     if (!auth.authenticated) {
-      guestService.incrementUsage(c.req.raw);
+      await guestService.incrementUsage(c.req.raw);
     }
 
     return uploadSuccessResponse(c, result);
@@ -964,7 +964,7 @@ function createApp() {
   // --- Chunk upload ---
   app.post('/api/chunked-upload/init', async (c) => {
     const { authService, chunkService } = getServices(c);
-    const auth = authService.checkAuthentication(c.req.raw);
+    const auth = await authService.checkAuthentication(c.req.raw);
     if (!auth.authenticated && authService.isAuthRequired()) {
       return jsonError(c, 403, 'GUEST_CHUNK_DISABLED', 'Guest users cannot use chunk upload.', 'Login required for chunk uploads.');
     }
@@ -1013,7 +1013,7 @@ function createApp() {
 
   app.post('/api/chunked-upload/chunk', async (c) => {
     const { authService, chunkService } = getServices(c);
-    const unauthorized = authService.isAuthRequired() ? requireAuth(c) : null;
+    const unauthorized = authService.isAuthRequired() ? await requireAuth(c) : null;
     if (unauthorized) return unauthorized;
 
     const body = await c.req.parseBody();
@@ -1033,7 +1033,7 @@ function createApp() {
 
   app.post('/api/chunked-upload/complete', async (c) => {
     const { authService, chunkService } = getServices(c);
-    const unauthorized = authService.isAuthRequired() ? requireAuth(c) : null;
+    const unauthorized = authService.isAuthRequired() ? await requireAuth(c) : null;
     if (unauthorized) return unauthorized;
 
     const body = await c.req.json().catch(() => ({}));
@@ -1162,7 +1162,7 @@ function createApp() {
   app.options('/share/:id', (c) => c.body(null, 204));
 
   app.post('/api/share/sign', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1194,8 +1194,8 @@ function createApp() {
   });
 
   // --- Manage API ---
-  app.get('/api/manage/list', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/manage/list', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1240,8 +1240,8 @@ function createApp() {
     return c.json(payload);
   });
 
-  app.get('/api/drive/tree', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/drive/tree', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1257,8 +1257,8 @@ function createApp() {
     });
   });
 
-  app.get('/api/drive/explorer', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/drive/explorer', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1290,7 +1290,7 @@ function createApp() {
   });
 
   app.get('/api/manage/folders', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1307,7 +1307,7 @@ function createApp() {
   });
 
   app.post('/api/drive/folders', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1322,7 +1322,7 @@ function createApp() {
     return c.json({ success: true, folder });
   });
   app.post('/api/manage/folders', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1336,7 +1336,7 @@ function createApp() {
   });
 
   app.post('/api/drive/folders/move', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1361,7 +1361,7 @@ function createApp() {
     return c.json({ success: true, ...result });
   });
   app.put('/api/manage/folders', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1382,7 +1382,7 @@ function createApp() {
   });
 
   app.delete('/api/drive/folders', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo, uploadService } = getServices(c);
@@ -1408,7 +1408,7 @@ function createApp() {
     });
   });
   app.delete('/api/manage/folders', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1435,7 +1435,7 @@ function createApp() {
   });
 
   app.post('/api/drive/files/move', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1450,7 +1450,7 @@ function createApp() {
     });
   });
   app.post('/api/manage/files/move-folder', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1466,7 +1466,7 @@ function createApp() {
   });
 
   app.post('/api/drive/files/rename', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1499,7 +1499,7 @@ function createApp() {
   });
 
   app.post('/api/drive/files/delete-batch', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { uploadService } = getServices(c);
@@ -1525,8 +1525,8 @@ function createApp() {
     });
   });
 
-  app.get('/api/manage/toggleLike/:id', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/manage/toggleLike/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1538,8 +1538,8 @@ function createApp() {
     return c.json({ success: true, liked: Boolean(updated.liked) });
   });
 
-  app.get('/api/manage/editName/:id', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/manage/editName/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1553,8 +1553,8 @@ function createApp() {
     return c.json({ success: true, fileName: updated.file_name, key: updated.id });
   });
 
-  app.get('/api/manage/block/:id', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/manage/block/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1567,8 +1567,8 @@ function createApp() {
     return c.json({ success: true, listType: nextListType, key: updated.id });
   });
 
-  app.get('/api/manage/white/:id', (c) => {
-    const unauthorized = requireAuth(c);
+  app.get('/api/manage/white/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { fileRepo } = getServices(c);
@@ -1582,7 +1582,7 @@ function createApp() {
   });
 
   app.get('/api/manage/delete/:id', async (c) => {
-    const unauthorized = requireAuth(c);
+    const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
     const { uploadService } = getServices(c);

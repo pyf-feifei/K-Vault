@@ -374,6 +374,12 @@ class FileRepository {
     };
   }
 
+  countByStorageConfigId(storageConfigId) {
+    if (!storageConfigId) return 0;
+    const row = get(this.db, 'SELECT COUNT(1) AS c FROM files WHERE storage_config_id = ?', [storageConfigId]);
+    return Number(row?.c || 0);
+  }
+
   count(filters = {}) {
     const { whereClause, params } = this.buildWhere(filters);
     const row = get(this.db, `SELECT COUNT(1) AS c FROM files ${whereClause}`, params);

@@ -1,4 +1,4 @@
-﻿const { run, get } = require('../../db');
+const { run, get } = require('../../db');
 
 function getClientIp(request) {
   const forwarded = request.headers.get('x-forwarded-for');
@@ -12,10 +12,42 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-class GuestService {
-  constructor(db, config) {
+/** SQLite-backed guest store (sync) */
+class SqliteGuestStore {
+  constructor(db) {
     this.db = db;
+  }
+
+  async getCount(id) {
+    const row = get(this.db, 'SELECT count FROM guest_upload_counters WHERE id = ?', [id]);
+    return row ? Number(row.count) : 0;
+  }
+
+  async increment(id, ip, day) {
+    const now = Date.now();
+    const existing = get(this.db, 'SELECT count FROM guest_upload_counters WHERE id = ?', [id]);
+    if (!existing) {
+      run(
+        this.db,
+        `INSERT INTO guest_upload_counters(id, ip, day, count, updated_at) VALUES (?, ?, ?, ?, ?)`,
+        [id, ip, day, 1, now]
+      );
+    } else {
+      run(
+        this.db,
+        `UPDATE guest_upload_counters SET count = ?, updated_at = ? WHERE id = ?`,
+        [Number(existing.count) + 1, now, id]
+      );
+    }
+  }
+}
+
+class GuestService {
+  constructor(dbOrGuestStore, config) {
     this.config = config;
+    this.guestStore = dbOrGuestStore && typeof dbOrGuestStore.increment === 'function'
+      ? dbOrGuestStore
+      : new SqliteGuestStore(dbOrGuestStore);
   }
 
   getConfig() {
@@ -29,7 +61,7 @@ class GuestService {
     };
   }
 
-  checkUploadAllowed(request, fileSize = 0) {
+  async checkUploadAllowed(request, fileSize = 0) {
     if (!this.config.guestUploadEnabled) {
       return {
         allowed: false,
@@ -48,8 +80,8 @@ class GuestService {
 
     const ip = getClientIp(request);
     const day = todayKey();
-    const row = get(this.db, 'SELECT count FROM guest_upload_counters WHERE id = ?', [`${ip}:${day}`]);
-    const current = row ? Number(row.count) : 0;
+    const id = `${ip}:${day}`;
+    const current = await this.guestStore.getCount(id);
 
     if (current >= this.config.guestDailyLimit) {
       return {
@@ -66,36 +98,19 @@ class GuestService {
     };
   }
 
-  incrementUsage(request) {
+  async incrementUsage(request) {
     if (!this.config.guestUploadEnabled) return;
 
     const ip = getClientIp(request);
     const day = todayKey();
     const id = `${ip}:${day}`;
-    const now = Date.now();
 
-    const existing = get(this.db, 'SELECT count FROM guest_upload_counters WHERE id = ?', [id]);
-    if (!existing) {
-      run(
-        this.db,
-        `INSERT INTO guest_upload_counters(id, ip, day, count, updated_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [id, ip, day, 1, now]
-      );
-      return;
-    }
-
-    run(
-      this.db,
-      `UPDATE guest_upload_counters
-       SET count = ?, updated_at = ?
-       WHERE id = ?`,
-      [Number(existing.count) + 1, now, id]
-    );
+    await this.guestStore.increment(id, ip, day);
   }
 }
 
 module.exports = {
   GuestService,
+  SqliteGuestStore,
   getClientIp,
 };

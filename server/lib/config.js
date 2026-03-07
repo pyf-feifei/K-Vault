@@ -1,4 +1,4 @@
-﻿const path = require('node:path');
+const path = require('node:path');
 
 function toBool(value, defaultValue = false) {
   if (value == null || value === '') return defaultValue;
@@ -60,6 +60,11 @@ function loadConfig(env = process.env) {
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(dataDir, 'k-vault.db'),
     chunkDir: env.CHUNK_DIR ? path.resolve(env.CHUNK_DIR) : path.join(dataDir, 'chunks'),
     settingsStore: (env.SETTINGS_STORE || 'sqlite').toLowerCase(),
+    useD1: Boolean(
+      (env.CF_ACCOUNT_ID || env.CLOUDFLARE_ACCOUNT_ID) &&
+      (env.CF_D1_DATABASE_ID || env.CLOUDFLARE_D1_DATABASE_ID) &&
+      (env.CF_API_TOKEN || env.CLOUDFLARE_API_TOKEN)
+    ),
     settingsRedisUrl: env.SETTINGS_REDIS_URL || env.REDIS_URL || '',
     settingsRedisPrefix: env.SETTINGS_REDIS_PREFIX || 'k-vault',
     settingsRedisConnectTimeoutMs: toInt(env.SETTINGS_REDIS_CONNECT_TIMEOUT_MS, 5000),

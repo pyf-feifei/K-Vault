@@ -1,7 +1,11 @@
 const { SqliteSettingsStore } = require('./sqlite-store');
-const { RedisSettingsStore } = require('./redis-store');
+const { D1SettingsStore } = require('./d1-store');
 
-function createSettingsStore({ db, config }) {
+function createSettingsStore({ db, config, d1Client }) {
+  if (d1Client) {
+    return new D1SettingsStore(d1Client);
+  }
+
   const mode = String(config.settingsStore || 'sqlite').toLowerCase();
 
   if (mode === 'sqlite') {
@@ -9,6 +13,7 @@ function createSettingsStore({ db, config }) {
   }
 
   if (mode === 'redis') {
+    const { RedisSettingsStore } = require('./redis-store');
     return new RedisSettingsStore(config);
   }
 

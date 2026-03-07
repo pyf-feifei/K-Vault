@@ -1,4 +1,4 @@
-﻿const crypto = require('node:crypto');
+const crypto = require('node:crypto');
 const { run, get } = require('../../db');
 
 const LEGACY_COOKIE_NAME = 'katelya_session';
@@ -17,10 +17,37 @@ function parseCookies(cookieHeader = '') {
   return result;
 }
 
-class AuthService {
-  constructor(db, config) {
+/** SQLite-backed session store (sync) */
+class SqliteSessionStore {
+  constructor(db) {
     this.db = db;
+  }
+
+  async createSession(token, userName, createdAt, expiresAt) {
+    run(
+      this.db,
+      `INSERT INTO sessions(token, user_name, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+      [token, userName, createdAt, expiresAt]
+    );
+  }
+
+  async getSession(token) {
+    if (!token) return null;
+    return get(this.db, 'SELECT * FROM sessions WHERE token = ?', [token]);
+  }
+
+  async deleteSession(token) {
+    if (!token) return;
+    run(this.db, 'DELETE FROM sessions WHERE token = ?', [token]);
+  }
+}
+
+class AuthService {
+  constructor(dbOrSessionStore, config) {
     this.config = config;
+    this.sessionStore = dbOrSessionStore && typeof dbOrSessionStore.getSession === 'function'
+      ? dbOrSessionStore
+      : new SqliteSessionStore(dbOrSessionStore);
   }
 
   isAuthRequired() {
@@ -52,32 +79,27 @@ class AuthService {
     return null;
   }
 
-  createSession(userName) {
+  async createSession(userName) {
     const now = Date.now();
     const expiresAt = now + this.config.sessionDurationMs;
     const token = this.generateToken();
 
-    run(
-      this.db,
-      `INSERT INTO sessions(token, user_name, created_at, expires_at)
-       VALUES (?, ?, ?, ?)` ,
-      [token, userName, now, expiresAt]
-    );
+    await this.sessionStore.createSession(token, userName, now, expiresAt);
 
     return { token, expiresAt };
   }
 
-  deleteSession(token) {
+  async deleteSession(token) {
     if (!token) return;
-    run(this.db, 'DELETE FROM sessions WHERE token = ?', [token]);
+    await this.sessionStore.deleteSession(token);
   }
 
-  getSession(token) {
+  async getSession(token) {
     if (!token) return null;
-    const row = get(this.db, 'SELECT * FROM sessions WHERE token = ?', [token]);
+    const row = await this.sessionStore.getSession(token);
     if (!row) return null;
     if (Date.now() > row.expires_at) {
-      this.deleteSession(token);
+      await this.deleteSession(token);
       return null;
     }
     return row;
@@ -100,13 +122,13 @@ class AuthService {
     ];
   }
 
-  checkAuthentication(request) {
+  async checkAuthentication(request) {
     if (!this.isAuthRequired()) {
       return { authenticated: true, reason: 'no-auth-required', user: 'anonymous' };
     }
 
     const sessionToken = this.getSessionTokenFromRequest(request);
-    const session = this.getSession(sessionToken);
+    const session = await this.getSession(sessionToken);
     if (session) {
       return {
         authenticated: true,
@@ -125,5 +147,6 @@ class AuthService {
 
 module.exports = {
   AuthService,
+  SqliteSessionStore,
   parseCookies,
 };
