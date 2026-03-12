@@ -13,7 +13,7 @@ To make Spaces deployment possible, this repository now includes a root-level `D
 2. Use the root `Dockerfile`.
 3. Copy the contents of `README-HF-SPACES.md` to the root `README.md` in your Space repository.
 4. Add the runtime secrets and variables listed below.
-5. If your Space supports persistent storage, keep it enabled so SQLite data survives restarts.
+5. Configure SQLite GitHub backup if you need data to survive Space restarts.
 
 ## Required Secrets
 
@@ -111,6 +111,34 @@ Use either `WEBDAV_USERNAME` + `WEBDAV_PASSWORD`, or `WEBDAV_BEARER_TOKEN`.
 | `GITHUB_BRANCH` | Variable | no |
 | `GITHUB_API_BASE` | Variable | no |
 
+## SQLite GitHub Backup
+
+If your Space filesystem is ephemeral, use a separate GitHub repository as the SQLite backup target. K-Vault will:
+
+- `git pull` the latest backup before the API starts
+- restore `k-vault.db` from that repository
+- start periodic backup only after SQLite writes happen
+- stop the backup timer automatically after an idle period
+- `git push` the latest SQLite snapshot back to GitHub
+
+The backup flow uses `git-lfs` by default and the image now includes both `git` and `git-lfs`.
+Make sure Git LFS is enabled for the backup repository before first use.
+
+| Name | Where | Required | Purpose |
+| :--- | :---: | :---: | :--- |
+| `SQLITE_BACKUP_ENABLED` | Variable | no | Force enable/disable backup. If omitted, backup auto-enables when repo + token are present |
+| `SQLITE_BACKUP_GITHUB_REPO` | Variable | yes* | Backup repo, e.g. `owner/repo` or full `https://github.com/...git` URL |
+| `SQLITE_BACKUP_GITHUB_TOKEN` | Secret | yes* | GitHub token with push access to the backup repo |
+| `SQLITE_BACKUP_GITHUB_BRANCH` | Variable | no | Branch to restore from and push to. Default: `main` |
+| `SQLITE_BACKUP_PATH` | Variable | no | SQLite snapshot path inside the repo. Default: `backups/k-vault.db` |
+| `SQLITE_BACKUP_INTERVAL_MS` | Variable | no | Backup interval after activity. Default: `15000` |
+| `SQLITE_BACKUP_IDLE_MS` | Variable | no | Stop the timer after this much idle time. Default: `120000` |
+| `SQLITE_BACKUP_GIT_LFS` | Variable | no | Use Git LFS for the SQLite snapshot. Default: `true` |
+| `SQLITE_BACKUP_GIT_USER_NAME` | Variable | no | Commit author name |
+| `SQLITE_BACKUP_GIT_USER_EMAIL` | Variable | no | Commit author email |
+
+\* `SQLITE_BACKUP_GITHUB_REPO` and `SQLITE_BACKUP_GITHUB_TOKEN` are both required when backup is enabled.
+
 ## Variables You Usually Do Not Need To Override
 
 These are already baked into the root `Dockerfile` for Spaces:
@@ -120,25 +148,6 @@ These are already baked into the root `Dockerfile` for Spaces:
 - `DATA_DIR=/data`
 - `DB_PATH=/data/k-vault.db`
 - `CHUNK_DIR=/data/chunks`
-
-## Cloudflare D1 (Optional)
-
-When configured, K-Vault uses Cloudflare D1 for persistent storage of `storage_configs`, `app_settings`, `sessions`, and `guest_upload_counters`. Files metadata stays in local SQLite.
-
-| Name | Where | Required | Purpose |
-| :--- | :---: | :---: | :--- |
-| `CF_ACCOUNT_ID` | Variable | yes* | Cloudflare account ID |
-| `CF_D1_DATABASE_ID` | Variable | yes* | D1 database ID |
-| `CF_API_TOKEN` | Secret | yes* | API token with D1 Edit permission |
-| `CF_D1_API_BASE` | Variable | no | Override API base (default: `https://api.cloudflare.com/client/v4`) |
-
-\* All three (`CF_ACCOUNT_ID`, `CF_D1_DATABASE_ID`, `CF_API_TOKEN`) must be set to enable D1. Otherwise SQLite is used.
-
-D1 tables are created automatically on first run. You can also run the schema manually:
-
-```sh
-npx wrangler d1 execute <db-name> --remote --file=server/lib/d1/schema.sql
-```
 
 ## Minimum Working Configuration
 

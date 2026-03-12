@@ -1,6 +1,62 @@
-﻿const fs = require('node:fs');
+const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+
+function isMutationSql(sql) {
+  const normalized = String(sql || '').trim().toUpperCase();
+  return (
+    normalized.startsWith('INSERT') ||
+    normalized.startsWith('UPDATE') ||
+    normalized.startsWith('DELETE') ||
+    normalized.startsWith('REPLACE') ||
+    normalized.startsWith('ALTER') ||
+    normalized.startsWith('CREATE') ||
+    normalized.startsWith('DROP') ||
+    normalized.startsWith('VACUUM')
+  );
+}
+
+function isSchemaMutationSql(sql) {
+  const normalized = String(sql || '').trim().toUpperCase();
+  return (
+    normalized.startsWith('ALTER') ||
+    normalized.startsWith('CREATE') ||
+    normalized.startsWith('DROP') ||
+    normalized.startsWith('VACUUM')
+  );
+}
+
+function registerMutationObserver(db, observer) {
+  if (!db || typeof observer !== 'function') return () => {};
+
+  if (!db.__mutationObservers) {
+    Object.defineProperty(db, '__mutationObservers', {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: new Set(),
+    });
+  }
+
+  db.__mutationObservers.add(observer);
+
+  return () => {
+    db.__mutationObservers?.delete(observer);
+  };
+}
+
+function notifyMutationObservers(db, sql, result) {
+  if (!db?.__mutationObservers || !isMutationSql(sql)) return;
+  if (!isSchemaMutationSql(sql) && Number(result?.changes || 0) <= 0) return;
+
+  for (const observer of db.__mutationObservers) {
+    try {
+      observer(sql);
+    } catch (error) {
+      console.warn('[db] Mutation observer failed:', error?.message || error);
+    }
+  }
+}
 
 function executeStatement(stmt, method, params) {
   if (params == null) {
@@ -26,7 +82,9 @@ function initDatabase(dbPath) {
 
 function run(db, sql, params) {
   const stmt = db.prepare(sql);
-  return executeStatement(stmt, 'run', params);
+  const result = executeStatement(stmt, 'run', params);
+  notifyMutationObservers(db, sql, result);
+  return result;
 }
 
 function get(db, sql, params) {
@@ -64,4 +122,5 @@ module.exports = {
   all,
   transaction,
   cleanupExpiredState,
+  registerMutationObserver,
 };

@@ -1,11 +1,6 @@
 const { SqliteSettingsStore } = require('./sqlite-store');
-const { D1SettingsStore } = require('./d1-store');
 
-function createSettingsStore({ db, config, d1Client }) {
-  if (d1Client) {
-    return new D1SettingsStore(d1Client);
-  }
-
+function createSettingsStore({ db, config }) {
   const mode = String(config.settingsStore || 'sqlite').toLowerCase();
 
   if (mode === 'sqlite') {

@@ -31,6 +31,11 @@ function loadConfig(env = process.env) {
   const dataDir = env.DATA_DIR
     ? path.resolve(env.DATA_DIR)
     : resolveDataPath('data');
+  const sqliteBackupRepo = env.SQLITE_BACKUP_GITHUB_REPO || env.SQLITE_BACKUP_REPO || '';
+  const sqliteBackupToken = env.SQLITE_BACKUP_GITHUB_TOKEN || env.SQLITE_BACKUP_TOKEN || '';
+  const sqliteBackupExplicit = env.SQLITE_BACKUP_ENABLED;
+  const sqliteBackupIntervalMs = Math.max(10000, toInt(env.SQLITE_BACKUP_INTERVAL_MS, 15000));
+  const sqliteBackupIdleMs = Math.max(sqliteBackupIntervalMs, toInt(env.SQLITE_BACKUP_IDLE_MS, 120000));
   const telegramToken = pickEnvAlias(env, ['TG_BOT_TOKEN', 'TG_Bot_Token']);
   const telegramChatId = pickEnvAlias(env, ['TG_CHAT_ID', 'TG_Chat_ID']);
   const telegramApiBase = pickEnvAlias(env, ['CUSTOM_BOT_API_URL'], 'https://api.telegram.org');
@@ -60,14 +65,26 @@ function loadConfig(env = process.env) {
     dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(dataDir, 'k-vault.db'),
     chunkDir: env.CHUNK_DIR ? path.resolve(env.CHUNK_DIR) : path.join(dataDir, 'chunks'),
     settingsStore: (env.SETTINGS_STORE || 'sqlite').toLowerCase(),
-    useD1: Boolean(
-      (env.CF_ACCOUNT_ID || env.CLOUDFLARE_ACCOUNT_ID) &&
-      (env.CF_D1_DATABASE_ID || env.CLOUDFLARE_D1_DATABASE_ID) &&
-      (env.CF_API_TOKEN || env.CLOUDFLARE_API_TOKEN)
-    ),
     settingsRedisUrl: env.SETTINGS_REDIS_URL || env.REDIS_URL || '',
     settingsRedisPrefix: env.SETTINGS_REDIS_PREFIX || 'k-vault',
     settingsRedisConnectTimeoutMs: toInt(env.SETTINGS_REDIS_CONNECT_TIMEOUT_MS, 5000),
+    sqliteBackup: {
+      enabled: sqliteBackupExplicit == null || sqliteBackupExplicit === ''
+        ? Boolean(sqliteBackupRepo && sqliteBackupToken)
+        : toBool(sqliteBackupExplicit, false),
+      repo: sqliteBackupRepo,
+      token: sqliteBackupToken,
+      branch: env.SQLITE_BACKUP_GITHUB_BRANCH || env.SQLITE_BACKUP_BRANCH || 'main',
+      repoDir: env.SQLITE_BACKUP_REPO_DIR
+        ? path.resolve(env.SQLITE_BACKUP_REPO_DIR)
+        : path.join(dataDir, 'sqlite-backup-repo'),
+      snapshotPath: env.SQLITE_BACKUP_PATH || 'backups/k-vault.db',
+      intervalMs: sqliteBackupIntervalMs,
+      idleMs: sqliteBackupIdleMs,
+      gitUserName: env.SQLITE_BACKUP_GIT_USER_NAME || 'K-Vault Backup Bot',
+      gitUserEmail: env.SQLITE_BACKUP_GIT_USER_EMAIL || 'k-vault-backup@users.noreply.github.com',
+      lfsEnabled: toBool(env.SQLITE_BACKUP_GIT_LFS, true),
+    },
 
     telegramApiBase: telegramApiBase.value,
 

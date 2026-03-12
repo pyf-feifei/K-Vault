@@ -11,6 +11,7 @@ const { createShareSignature, verifyShareSignature } = require('./lib/utils/shar
 async function createApp() {
   const app = new Hono();
   const container = await createContainer(process.env);
+  app.container = container;
 
   app.use('*', cors({
     origin: (origin) => origin || '*',
@@ -731,7 +732,7 @@ async function createApp() {
 
   // --- Status ---
   app.get('/api/status', async (c) => {
-    const { storageRepo, storageFactory, authService, guestService, settingsStore } = getServices(c);
+    const { storageRepo, storageFactory, authService, guestService, settingsStore, sqliteBackup } = getServices(c);
 
     const status = {
       telegram: {
@@ -753,6 +754,7 @@ async function createApp() {
         message: authService.isAuthRequired() ? 'Password auth enabled' : 'No auth required',
       },
       guestUpload: guestService.getConfig(),
+      sqliteBackup: sqliteBackup?.getStatus?.() || { enabled: false, running: false, dirty: false, message: 'Disabled' },
       settings: { connected: false, message: 'Unknown' },
       diagnostics: {},
     };

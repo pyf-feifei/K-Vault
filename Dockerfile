@@ -9,7 +9,7 @@ RUN npm ci --omit=dev
 FROM node:22-alpine
 WORKDIR /app
 
-RUN apk add --no-cache nginx
+RUN apk add --no-cache nginx git git-lfs
 
 COPY --from=api-deps /app/server/node_modules /app/server/node_modules
 COPY server /app/server
