@@ -47,7 +47,7 @@ onMounted(async () => {
   }
 
   if (!authStore.authRequired || authStore.authenticated) {
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/upload';
+    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/';
     router.replace(target);
   }
 });
@@ -57,7 +57,7 @@ async function submit() {
   error.value = '';
   try {
     await authStore.login(username.value, password.value);
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/upload';
+    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/';
     router.push(target);
   } catch (err) {
     error.value = err.message || 'Login failed';

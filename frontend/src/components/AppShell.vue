@@ -9,7 +9,7 @@
         </div>
       </div>
       <nav class="nav-row">
-        <router-link class="nav-link" to="/upload">Upload</router-link>
+        <router-link class="nav-link" to="/">Upload</router-link>
         <router-link class="nav-link" to="/drive">Drive</router-link>
         <router-link class="nav-link" to="/storage">Storage</router-link>
         <router-link class="nav-link" to="/status">Status</router-link>

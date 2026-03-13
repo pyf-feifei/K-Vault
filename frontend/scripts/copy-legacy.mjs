@@ -4,6 +4,7 @@ import path from 'node:path';
 const rootDir = path.resolve(process.cwd(), '..');
 const frontendDir = path.resolve(process.cwd());
 const distDir = path.resolve(process.cwd(), 'dist');
+const mode = process.argv[2] === 'app-root' ? 'app-root' : 'landing-root';
 
 const legacyFiles = [
   'index.html',
@@ -54,7 +55,8 @@ function copyEntry(relativePath, targetBase = '') {
 
 fs.mkdirSync(distDir, { recursive: true });
 
-// Keep legacy pages at root for backward compatibility, but reserve /index.html for new landing.
+// Keep legacy pages at root for backward compatibility. In app-root mode we keep the
+// Vite-generated SPA entry as /index.html; in landing-root mode we replace it below.
 for (const file of legacyFiles) {
   if (file !== 'index.html') {
     copyEntry(file);
@@ -66,14 +68,16 @@ for (const dir of legacyDirs) {
   copyEntry(dir, 'legacy');
 }
 
-// Product landing page for "/".
-copyFile(
-  path.resolve(frontendDir, 'landing', 'index.html'),
-  path.resolve(distDir, 'index.html')
-);
-copyFile(
-  path.resolve(frontendDir, 'landing', '_redirects'),
-  path.resolve(distDir, '_redirects')
-);
+if (mode === 'landing-root') {
+  // Product landing page for "/".
+  copyFile(
+    path.resolve(frontendDir, 'landing', 'index.html'),
+    path.resolve(distDir, 'index.html')
+  );
+  copyFile(
+    path.resolve(frontendDir, 'landing', '_redirects'),
+    path.resolve(distDir, '_redirects')
+  );
+}
 
-console.log('[frontend] landing + legacy assets copied to dist root');
+console.log(`[frontend] ${mode} build prepared with legacy compatibility assets`);

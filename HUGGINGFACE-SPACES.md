@@ -7,6 +7,23 @@ This repository does not map directly to HuggingFace Spaces out of the box becau
 
 To make Spaces deployment possible, this repository now includes a root-level `Dockerfile` that runs both parts inside one container.
 
+## Runtime Routes
+
+The HuggingFace container now serves the Vue app as the primary UI:
+
+- `/` -> upload console
+- `/login` -> admin login
+- `/drive` -> drive/file manager
+- `/storage` -> storage profile management
+- `/status` -> frontend status page
+
+Legacy static pages remain available for compatibility:
+
+- `/admin.html`
+- `/webdav.html`
+- `/gallery.html`
+- `/legacy/index.html`
+
 ## Recommended Space Setup
 
 1. Create a new **Docker Space**.
