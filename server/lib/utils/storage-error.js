@@ -59,6 +59,16 @@ function classifyStorageError(error, status) {
   }
 
   if (
+    byMessage(/\bcontains binary files\b|\buse .*xet\b|\bpush was rejected\b/)
+  ) {
+    return {
+      code: 'UPSTREAM_REJECTED',
+      message: 'Upstream storage rejected this upload mode or file type.',
+      retriable: false,
+    };
+  }
+
+  if (
     byStatus([404]) ||
     byMessage(/\bnot found|path does not exist|no such file|missing resource\b/)
   ) {

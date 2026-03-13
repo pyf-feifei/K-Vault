@@ -1,3 +1,12 @@
+const crypto = require('node:crypto');
+
+const HF_ENDPOINT = 'https://huggingface.co';
+const HF_BRANCH = 'main';
+const HF_LFS_HEADERS = {
+  Accept: 'application/vnd.git-lfs+json',
+  'Content-Type': 'application/vnd.git-lfs+json',
+};
+
 function normalizeToken(value) {
   if (!value) return '';
   return String(value).replace(/^Bearer\s+/i, '').trim();
@@ -20,12 +29,20 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function commitUrl(repo, branch = 'main') {
-  return `https://huggingface.co/api/datasets/${repo}/commit/${encodeURIComponent(branch)}`;
+function commitUrl(repo, branch = HF_BRANCH) {
+  return `${HF_ENDPOINT}/api/datasets/${repo}/commit/${encodeURIComponent(branch)}`;
 }
 
 function resolveUrl(repo, pathInRepo) {
-  return `https://huggingface.co/datasets/${repo}/resolve/main/${pathInRepo}`;
+  return `${HF_ENDPOINT}/datasets/${repo}/resolve/${HF_BRANCH}/${pathInRepo}`;
+}
+
+function preuploadUrl(repo, branch = HF_BRANCH) {
+  return `${HF_ENDPOINT}/api/datasets/${repo}/preupload/${encodeURIComponent(branch)}`;
+}
+
+function lfsBatchUrl(repo) {
+  return `${HF_ENDPOINT}/datasets/${repo}.git/info/lfs/objects/batch`;
 }
 
 function shouldRetryStatus(status) {
@@ -53,6 +70,40 @@ async function discardResponseBody(response) {
   } catch {
     // best effort
   }
+}
+
+function getUploadInfo(buffer) {
+  const content = Buffer.from(buffer);
+  return {
+    content,
+    size: content.byteLength,
+    sample: content.subarray(0, Math.min(512, content.byteLength)),
+    oid: crypto.createHash('sha256').update(content).digest('hex'),
+  };
+}
+
+function getCompletionPayload(etags, oid) {
+  return {
+    oid,
+    parts: etags.map((etag, index) => ({
+      partNumber: index + 1,
+      etag,
+    })),
+  };
+}
+
+function getSortedPartUrls(header, uploadInfo, chunkSize) {
+  const partUrls = Object.entries(header || {})
+    .filter(([key]) => /^\d+$/.test(key))
+    .map(([key, value]) => [Number.parseInt(key, 10), value])
+    .sort((left, right) => left[0] - right[0])
+    .map(([, value]) => value);
+
+  const expectedParts = Math.ceil(uploadInfo.size / chunkSize);
+  if (partUrls.length !== expectedParts) {
+    throw new Error('Invalid HuggingFace LFS multipart upload response.');
+  }
+  return partUrls;
 }
 
 async function fetchWithRetry(url, options = {}, retryOptions = {}) {
@@ -123,11 +174,270 @@ class HuggingFaceStorageAdapter {
     };
   }
 
+  async requestUploadMode(pathInRepo, uploadInfo) {
+    const response = await fetchWithRetry(
+      preuploadUrl(this.config.repo),
+      {
+        method: 'POST',
+        headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          files: [
+            {
+              path: pathInRepo,
+              sample: uploadInfo.sample.toString('base64'),
+              size: uploadInfo.size,
+            },
+          ],
+        }),
+      },
+      {
+        timeoutMs: 15000,
+        retries: 2,
+        retryDelayMs: 1000,
+        operation: 'HuggingFace preupload check',
+      }
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json.error || json.message || `HuggingFace preupload failed (${response.status}).`);
+    }
+
+    const fileInfo = Array.isArray(json.files) ? json.files[0] : null;
+    if (!fileInfo?.uploadMode) {
+      throw new Error('HuggingFace preupload response missing upload mode.');
+    }
+
+    return fileInfo;
+  }
+
+  async requestLfsBatch(uploadInfo) {
+    const response = await fetchWithRetry(
+      lfsBatchUrl(this.config.repo),
+      {
+        method: 'POST',
+        headers: this.authHeaders(HF_LFS_HEADERS),
+        body: JSON.stringify({
+          operation: 'upload',
+          transfers: ['basic', 'multipart'],
+          objects: [
+            {
+              oid: uploadInfo.oid,
+              size: uploadInfo.size,
+            },
+          ],
+          hash_algo: 'sha256',
+          ref: {
+            name: HF_BRANCH,
+          },
+        }),
+      },
+      {
+        timeoutMs: 20000,
+        retries: 2,
+        retryDelayMs: 1500,
+        operation: 'HuggingFace LFS batch request',
+      }
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json.error || json.message || `HuggingFace LFS batch failed (${response.status}).`);
+    }
+
+    const objectInfo = Array.isArray(json.objects) ? json.objects[0] : null;
+    if (objectInfo?.error?.message) {
+      throw new Error(objectInfo.error.message);
+    }
+    if (!objectInfo?.oid || typeof objectInfo.size !== 'number') {
+      throw new Error('Malformed HuggingFace LFS batch response.');
+    }
+
+    return objectInfo;
+  }
+
+  async uploadLfsBuffer(uploadInfo, lfsInfo) {
+    const actions = lfsInfo.actions;
+    if (!actions?.upload) {
+      return;
+    }
+
+    const uploadAction = actions.upload;
+    const header = uploadAction.header || {};
+    const chunkSize = header.chunk_size ? Number.parseInt(String(header.chunk_size), 10) : null;
+
+    if (chunkSize && Number.isFinite(chunkSize) && chunkSize > 0) {
+      const partUrls = getSortedPartUrls(header, uploadInfo, chunkSize);
+      const etags = [];
+
+      for (let index = 0; index < partUrls.length; index += 1) {
+        const start = index * chunkSize;
+        const end = Math.min(uploadInfo.size, start + chunkSize);
+        const partBuffer = uploadInfo.content.subarray(start, end);
+        const response = await fetchWithRetry(
+          partUrls[index],
+          {
+            method: 'PUT',
+            body: partBuffer,
+          },
+          {
+            timeoutMs: 120000,
+            retries: 2,
+            retryDelayMs: 1500,
+            operation: `HuggingFace LFS multipart upload part ${index + 1}`,
+          }
+        );
+
+        if (!response.ok) {
+          const detail = await parseErrorBody(response);
+          throw new Error(detail || `HuggingFace LFS multipart upload failed (${response.status}).`);
+        }
+
+        const etag = response.headers.get('etag');
+        if (!etag) {
+          throw new Error(`HuggingFace LFS multipart upload missing etag for part ${index + 1}.`);
+        }
+        etags.push(etag);
+      }
+
+      const completion = await fetchWithRetry(
+        uploadAction.href,
+        {
+          method: 'POST',
+          headers: HF_LFS_HEADERS,
+          body: JSON.stringify(getCompletionPayload(etags, uploadInfo.oid)),
+        },
+        {
+          timeoutMs: 30000,
+          retries: 2,
+          retryDelayMs: 1000,
+          operation: 'HuggingFace LFS multipart completion',
+        }
+      );
+
+      if (!completion.ok) {
+        const detail = await parseErrorBody(completion);
+        throw new Error(detail || `HuggingFace LFS multipart completion failed (${completion.status}).`);
+      }
+    } else {
+      const response = await fetchWithRetry(
+        uploadAction.href,
+        {
+          method: 'PUT',
+          body: uploadInfo.content,
+        },
+        {
+          timeoutMs: 120000,
+          retries: 2,
+          retryDelayMs: 1500,
+          operation: 'HuggingFace LFS upload',
+        }
+      );
+
+      if (!response.ok) {
+        const detail = await parseErrorBody(response);
+        throw new Error(detail || `HuggingFace LFS upload failed (${response.status}).`);
+      }
+    }
+
+    if (actions.verify?.href) {
+      const verify = await fetchWithRetry(
+        actions.verify.href,
+        {
+          method: 'POST',
+          headers: this.authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            oid: uploadInfo.oid,
+            size: uploadInfo.size,
+          }),
+        },
+        {
+          timeoutMs: 20000,
+          retries: 2,
+          retryDelayMs: 1000,
+          operation: 'HuggingFace LFS verify',
+        }
+      );
+
+      if (!verify.ok) {
+        const detail = await parseErrorBody(verify);
+        throw new Error(detail || `HuggingFace LFS verify failed (${verify.status}).`);
+      }
+    }
+  }
+
+  async commitRegularFile(pathInRepo, uploadInfo, fileName) {
+    const response = await fetchWithRetry(
+      commitUrl(this.config.repo),
+      {
+        method: 'POST',
+        headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
+        body: [
+          JSON.stringify({ key: 'header', value: { summary: `Upload ${fileName || pathInRepo}` } }),
+          JSON.stringify({
+            key: 'file',
+            value: {
+              path: pathInRepo,
+              encoding: 'base64',
+              content: toBase64(uploadInfo.content),
+            },
+          }),
+        ].join('\n'),
+      },
+      {
+        timeoutMs: 120000,
+        retries: 2,
+        retryDelayMs: 2000,
+        operation: 'HuggingFace regular commit upload',
+      }
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json.error || json.message || `HuggingFace upload failed (${response.status}).`);
+    }
+    return json;
+  }
+
+  async commitLfsFile(pathInRepo, uploadInfo, fileName) {
+    const response = await fetchWithRetry(
+      commitUrl(this.config.repo),
+      {
+        method: 'POST',
+        headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
+        body: [
+          JSON.stringify({ key: 'header', value: { summary: `Upload ${fileName || pathInRepo}` } }),
+          JSON.stringify({
+            key: 'lfsFile',
+            value: {
+              path: pathInRepo,
+              algo: 'sha256',
+              oid: uploadInfo.oid,
+              size: uploadInfo.size,
+            },
+          }),
+        ].join('\n'),
+      },
+      {
+        timeoutMs: 120000,
+        retries: 2,
+        retryDelayMs: 2000,
+        operation: 'HuggingFace LFS commit',
+      }
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json.error || json.message || `HuggingFace LFS commit failed (${response.status}).`);
+    }
+    return json;
+  }
+
   async testConnection() {
     this.validate();
 
     const response = await fetchWithRetry(
-      `https://huggingface.co/api/datasets/${this.config.repo}`,
+      `${HF_ENDPOINT}/api/datasets/${this.config.repo}`,
       {
         headers: this.authHeaders(),
       },
@@ -154,43 +464,23 @@ class HuggingFaceStorageAdapter {
     }
 
     const pathInRepo = storageKey;
-    const body = [
-      JSON.stringify({ key: 'header', value: { summary: `Upload ${fileName || pathInRepo}` } }),
-      JSON.stringify({
-        key: 'file',
-        value: {
-          path: pathInRepo,
-          encoding: 'base64',
-          content: toBase64(buffer),
-        },
-      }),
-    ].join('\n');
+    const uploadInfo = getUploadInfo(buffer);
+    const modeInfo = await this.requestUploadMode(pathInRepo, uploadInfo);
 
-    const response = await fetchWithRetry(
-      commitUrl(this.config.repo),
-      {
-        method: 'POST',
-        headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
-        body,
-      },
-      {
-        timeoutMs: 120000,
-        retries: 2,
-        retryDelayMs: 2000,
-        operation: 'HuggingFace upload',
-      }
-    );
-
-    const json = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(json.error || json.message || `HuggingFace upload failed (${response.status}).`);
+    let commitResult;
+    if (modeInfo.uploadMode === 'lfs') {
+      const lfsInfo = await this.requestLfsBatch(uploadInfo);
+      await this.uploadLfsBuffer(uploadInfo, lfsInfo);
+      commitResult = await this.commitLfsFile(pathInRepo, uploadInfo, fileName);
+    } else {
+      commitResult = await this.commitRegularFile(pathInRepo, uploadInfo, fileName);
     }
 
     return {
       storageKey: pathInRepo,
       metadata: {
         hfPath: pathInRepo,
-        hfCommit: json.commitOid || null,
+        hfCommit: commitResult.commitOid || null,
       },
     };
   }
@@ -230,17 +520,15 @@ class HuggingFaceStorageAdapter {
     this.validate();
 
     const pathInRepo = metadata.hfPath || storageKey;
-    const body = [
-      JSON.stringify({ key: 'header', value: { summary: `Delete ${pathInRepo}` } }),
-      JSON.stringify({ key: 'deletedFile', value: { path: pathInRepo } }),
-    ].join('\n');
-
     const response = await fetchWithRetry(
       commitUrl(this.config.repo),
       {
         method: 'POST',
         headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
-        body,
+        body: [
+          JSON.stringify({ key: 'header', value: { summary: `Delete ${pathInRepo}` } }),
+          JSON.stringify({ key: 'deletedFile', value: { path: pathInRepo } }),
+        ].join('\n'),
       },
       {
         timeoutMs: 60000,

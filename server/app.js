@@ -292,7 +292,7 @@ async function createApp() {
   }
 
   function normalizeUploadError(c, error, fallbackStatus = 500) {
-    const payload = toStorageErrorPayload(error, error?.status || fallbackStatus);
+    const payload = toStorageErrorPayload(error, error?.status);
     const detail = payload.detail || payload.message || 'Upload failed.';
     const message = payload.message || 'Upload failed.';
     const code = payload.code || 'UPLOAD_FAILED';
