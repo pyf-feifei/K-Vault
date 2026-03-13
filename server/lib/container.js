@@ -1,5 +1,5 @@
 const { initDatabase, cleanupExpiredState, registerMutationObserver } = require('../db');
-const { loadConfig } = require('./config');
+const { loadBootstrapConfig, loadConfig } = require('./config');
 const { AuthService } = require('./utils/auth');
 const { GuestService } = require('./utils/guest');
 const { StorageFactory } = require('./storage/factory');
@@ -11,11 +11,17 @@ const { createSettingsStore } = require('./settings/factory');
 const { createSqliteGitHubBackup } = require('./backup/sqlite-github-backup');
 
 async function createContainer(env = process.env) {
-  const config = loadConfig(env);
-  const sqliteBackup = createSqliteGitHubBackup(config.sqliteBackup, config.dbPath);
+  const bootstrapConfig = loadBootstrapConfig(env);
+  const sqliteBackup = createSqliteGitHubBackup(bootstrapConfig.sqliteBackup, bootstrapConfig.dbPath);
 
   if (sqliteBackup) {
     await sqliteBackup.restoreIfAvailable();
+  }
+
+  const config = loadConfig(env);
+  if (config.runtimeSecrets.generatedKeys.length > 0) {
+    console.log(`[runtime-secrets] Generated ${config.runtimeSecrets.generatedKeys.join(', ')} at ${config.runtimeSecrets.runtimeSecretsPath}`);
+    sqliteBackup?.recordActivity();
   }
 
   const db = initDatabase(config.dbPath);

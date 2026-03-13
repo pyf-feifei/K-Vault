@@ -32,15 +32,30 @@ Legacy static pages remain available for compatibility:
 4. Add the runtime secrets and variables listed below.
 5. Configure SQLite GitHub backup if you need data to survive Space restarts.
 
-## Required Secrets
+## Runtime Secrets
 
-These should be created in **Space Settings -> Secrets**.
+These can still be created in **Space Settings -> Secrets**, but they are no longer mandatory when you use `/data` persistence or the SQLite GitHub backup flow.
 
 | Name | Required | Purpose |
 | :--- | :---: | :--- |
-| `CONFIG_ENCRYPTION_KEY` | yes | Encrypts dynamic storage configurations saved from the admin UI |
-| `SESSION_SECRET` | yes | Signs session cookies and share links |
+| `CONFIG_ENCRYPTION_KEY` | optional | Manual override for encrypting dynamic storage configurations |
+| `SESSION_SECRET` | optional | Manual override for share-link/app signatures |
 | `BASIC_PASS` | recommended | Admin password for the backend UI |
+
+If `CONFIG_ENCRYPTION_KEY` / `SESSION_SECRET` are missing, K-Vault will:
+
+1. generate both values on first startup
+2. write them to `/data/k-vault.runtime-secrets.json`
+3. reuse that file on later starts
+4. back it up together with SQLite when SQLite GitHub backup is enabled
+
+This means:
+
+- with **Persistent Storage** enabled on the Space, the generated file stays on `/data`
+- with **SQLite GitHub backup** enabled, the generated file is restored from and pushed to the backup repository
+- without either of the above, Space rebuilds can lose the generated secrets and previously saved storage configs may become undecryptable
+
+If you rely on SQLite GitHub backup for generated secrets, keep that backup repository private/trusted because it will now contain the runtime secret file.
 
 ## Recommended Variables
 
@@ -54,6 +69,8 @@ These can be created in **Space Settings -> Variables**.
 | `GUEST_MAX_FILE_SIZE` | optional | `5242880` | Guest single file limit in bytes |
 | `GUEST_DAILY_LIMIT` | optional | `10` | Guest upload count per IP per day |
 | `DEFAULT_STORAGE_TYPE` | optional | `telegram` | Bootstrap default storage type |
+| `RUNTIME_SECRETS_AUTO_GENERATE` | optional | `true` | Auto-generate runtime secrets when env secrets are missing |
+| `RUNTIME_SECRETS_FILE` | optional | `/data/k-vault.runtime-secrets.json` | Path of the generated runtime secret file |
 
 ## Storage Bootstrap Variables
 
@@ -148,6 +165,7 @@ Make sure Git LFS is enabled for the backup repository before first use.
 | `SQLITE_BACKUP_GITHUB_TOKEN` | Secret | yes* | GitHub token with push access to the backup repo |
 | `SQLITE_BACKUP_GITHUB_BRANCH` | Variable | no | Branch to restore from and push to. Default: `main` |
 | `SQLITE_BACKUP_PATH` | Variable | no | SQLite snapshot path inside the repo. Default: `backups/k-vault.db` |
+| `SQLITE_BACKUP_SECRET_PATH` | Variable | no | Runtime secret file path inside the repo. Default: `backups/k-vault.runtime-secrets.json` |
 | `SQLITE_BACKUP_INTERVAL_MS` | Variable | no | Backup interval after activity. Default: `15000` |
 | `SQLITE_BACKUP_IDLE_MS` | Variable | no | Stop the timer after this much idle time. Default: `120000` |
 | `SQLITE_BACKUP_GIT_LFS` | Variable | no | Use Git LFS for the SQLite snapshot. Default: `true` |
@@ -170,11 +188,13 @@ These are already baked into the root `Dockerfile` for Spaces:
 
 If you want the smallest possible setup, start with:
 
-- Secret: `CONFIG_ENCRYPTION_KEY`
-- Secret: `SESSION_SECRET`
 - Variable: `BASIC_USER=admin`
 - Secret: `BASIC_PASS=<your password>`
 - Variable: `PUBLIC_BASE_URL=https://<your-space>.hf.space`
+- one of:
+  - Persistent Storage enabled for `/data`
+  - SQLite GitHub backup configured
+  - manual Secrets `CONFIG_ENCRYPTION_KEY` + `SESSION_SECRET`
 
 Then either:
 

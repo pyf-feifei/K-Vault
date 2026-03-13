@@ -26,35 +26,7 @@ async function createApp() {
     c.set('traceId', traceId);
     c.header('X-Trace-Id', traceId);
     c.set('container', container);
-    try {
-      await next();
-    } catch (error) {
-      console.error(error);
-      const payload = toStorageErrorPayload(error, 500);
-      const envelope = {
-        success: false,
-        error: {
-          code: payload.code || 'INTERNAL_ERROR',
-          message: payload.message || 'Internal Server Error',
-          detail: payload.detail || String(error?.message || 'unknown'),
-          retriable: payload.retriable === true,
-        },
-        traceId,
-      };
-
-      if (prefersV2Envelope(c)) {
-        return c.json(envelope, 500);
-      }
-
-      return c.json({
-        success: false,
-        error: envelope.error.message,
-        errorCode: envelope.error.code,
-        errorDetail: envelope.error.detail,
-        retriable: envelope.error.retriable,
-        traceId,
-      }, 500);
-    }
+    await next();
   });
 
   function getServices(c) {
@@ -64,6 +36,40 @@ async function createApp() {
   function getTraceId(c) {
     return c.get('traceId') || crypto.randomUUID();
   }
+
+  function buildErrorResponse(c, error, fallbackStatus = 500) {
+    const statusCode = Number(error?.status || fallbackStatus || 500) || 500;
+    const traceId = getTraceId(c);
+    const payload = toStorageErrorPayload(error, statusCode);
+    const envelope = {
+      success: false,
+      error: {
+        code: payload.code || 'INTERNAL_ERROR',
+        message: payload.message || 'Internal Server Error',
+        detail: payload.detail || String(error?.message || 'unknown'),
+        retriable: payload.retriable === true,
+      },
+      traceId,
+    };
+
+    if (prefersV2Envelope(c)) {
+      return c.json(envelope, statusCode);
+    }
+
+    return c.json({
+      success: false,
+      error: envelope.error.message,
+      errorCode: envelope.error.code,
+      errorDetail: envelope.error.detail,
+      retriable: envelope.error.retriable,
+      traceId,
+    }, statusCode);
+  }
+
+  app.onError((error, c) => {
+    console.error(error);
+    return buildErrorResponse(c, error);
+  });
 
   function prefersV2Envelope(c) {
     const client = String(c.req.header('X-KVault-Client') || '').toLowerCase();

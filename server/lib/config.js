@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { ensureRuntimeSecrets, resolveRuntimeSecretsPath } = require('./runtime-secrets');
 
 function toBool(value, defaultValue = false) {
   if (value == null || value === '') return defaultValue;
@@ -27,15 +28,69 @@ function pickEnvAlias(env, aliases = [], fallback = '') {
   return { value: fallback, source: '' };
 }
 
-function loadConfig(env = process.env) {
+function resolveBasePaths(env = process.env) {
   const dataDir = env.DATA_DIR
     ? path.resolve(env.DATA_DIR)
     : resolveDataPath('data');
+
+  return {
+    dataDir,
+    dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(dataDir, 'k-vault.db'),
+    chunkDir: env.CHUNK_DIR ? path.resolve(env.CHUNK_DIR) : path.join(dataDir, 'chunks'),
+    runtimeSecretsPath: resolveRuntimeSecretsPath({ env, dataDir }),
+  };
+}
+
+function buildSqliteBackupConfig(env = process.env, basePaths = resolveBasePaths(env)) {
   const sqliteBackupRepo = env.SQLITE_BACKUP_GITHUB_REPO || env.SQLITE_BACKUP_REPO || '';
   const sqliteBackupToken = env.SQLITE_BACKUP_GITHUB_TOKEN || env.SQLITE_BACKUP_TOKEN || '';
   const sqliteBackupExplicit = env.SQLITE_BACKUP_ENABLED;
   const sqliteBackupIntervalMs = Math.max(10000, toInt(env.SQLITE_BACKUP_INTERVAL_MS, 15000));
   const sqliteBackupIdleMs = Math.max(sqliteBackupIntervalMs, toInt(env.SQLITE_BACKUP_IDLE_MS, 120000));
+
+  return {
+    enabled: sqliteBackupExplicit == null || sqliteBackupExplicit === ''
+      ? Boolean(sqliteBackupRepo && sqliteBackupToken)
+      : toBool(sqliteBackupExplicit, false),
+    repo: sqliteBackupRepo,
+    token: sqliteBackupToken,
+    branch: env.SQLITE_BACKUP_GITHUB_BRANCH || env.SQLITE_BACKUP_BRANCH || 'main',
+    repoDir: env.SQLITE_BACKUP_REPO_DIR
+      ? path.resolve(env.SQLITE_BACKUP_REPO_DIR)
+      : path.join(basePaths.dataDir, 'sqlite-backup-repo'),
+    snapshotPath: env.SQLITE_BACKUP_PATH || 'backups/k-vault.db',
+    managedFiles: [
+      {
+        localPath: basePaths.runtimeSecretsPath,
+        repoPath: env.SQLITE_BACKUP_SECRET_PATH || 'backups/k-vault.runtime-secrets.json',
+      },
+    ],
+    intervalMs: sqliteBackupIntervalMs,
+    idleMs: sqliteBackupIdleMs,
+    gitUserName: env.SQLITE_BACKUP_GIT_USER_NAME || 'K-Vault Backup Bot',
+    gitUserEmail: env.SQLITE_BACKUP_GIT_USER_EMAIL || 'k-vault-backup@users.noreply.github.com',
+    lfsEnabled: toBool(env.SQLITE_BACKUP_GIT_LFS, true),
+  };
+}
+
+function loadBootstrapConfig(env = process.env) {
+  const basePaths = resolveBasePaths(env);
+  return {
+    ...basePaths,
+    runtimeSecretsAutoGenerate: toBool(env.RUNTIME_SECRETS_AUTO_GENERATE, true),
+    sqliteBackup: buildSqliteBackupConfig(env, basePaths),
+  };
+}
+
+function loadConfig(env = process.env) {
+  const basePaths = resolveBasePaths(env);
+  const bootstrap = loadBootstrapConfig(env);
+  const runtimeSecrets = ensureRuntimeSecrets({
+    env,
+    dataDir: basePaths.dataDir,
+    autoGenerate: bootstrap.runtimeSecretsAutoGenerate,
+  });
+
   const telegramToken = pickEnvAlias(env, ['TG_BOT_TOKEN', 'TG_Bot_Token']);
   const telegramChatId = pickEnvAlias(env, ['TG_CHAT_ID', 'TG_Chat_ID']);
   const telegramApiBase = pickEnvAlias(env, ['CUSTOM_BOT_API_URL'], 'https://api.telegram.org');
@@ -58,37 +113,21 @@ function loadConfig(env = process.env) {
     uploadSmallFileThreshold: toInt(env.UPLOAD_SMALL_FILE_THRESHOLD, 20 * 1024 * 1024),
     chunkSize: toInt(env.CHUNK_SIZE, 5 * 1024 * 1024),
 
-    configEncryptionKey: env.CONFIG_ENCRYPTION_KEY || env.FILE_URL_SECRET || env.SESSION_SECRET || '',
-    sessionSecret: env.SESSION_SECRET || env.FILE_URL_SECRET || env.CONFIG_ENCRYPTION_KEY || '',
+    configEncryptionKey: runtimeSecrets.configEncryptionKey,
+    sessionSecret: runtimeSecrets.sessionSecret,
 
-    dataDir,
-    dbPath: env.DB_PATH ? path.resolve(env.DB_PATH) : path.join(dataDir, 'k-vault.db'),
-    chunkDir: env.CHUNK_DIR ? path.resolve(env.CHUNK_DIR) : path.join(dataDir, 'chunks'),
+    dataDir: basePaths.dataDir,
+    dbPath: basePaths.dbPath,
+    chunkDir: basePaths.chunkDir,
+    runtimeSecrets,
     settingsStore: (env.SETTINGS_STORE || 'sqlite').toLowerCase(),
     settingsRedisUrl: env.SETTINGS_REDIS_URL || env.REDIS_URL || '',
     settingsRedisPrefix: env.SETTINGS_REDIS_PREFIX || 'k-vault',
     settingsRedisConnectTimeoutMs: toInt(env.SETTINGS_REDIS_CONNECT_TIMEOUT_MS, 5000),
-    sqliteBackup: {
-      enabled: sqliteBackupExplicit == null || sqliteBackupExplicit === ''
-        ? Boolean(sqliteBackupRepo && sqliteBackupToken)
-        : toBool(sqliteBackupExplicit, false),
-      repo: sqliteBackupRepo,
-      token: sqliteBackupToken,
-      branch: env.SQLITE_BACKUP_GITHUB_BRANCH || env.SQLITE_BACKUP_BRANCH || 'main',
-      repoDir: env.SQLITE_BACKUP_REPO_DIR
-        ? path.resolve(env.SQLITE_BACKUP_REPO_DIR)
-        : path.join(dataDir, 'sqlite-backup-repo'),
-      snapshotPath: env.SQLITE_BACKUP_PATH || 'backups/k-vault.db',
-      intervalMs: sqliteBackupIntervalMs,
-      idleMs: sqliteBackupIdleMs,
-      gitUserName: env.SQLITE_BACKUP_GIT_USER_NAME || 'K-Vault Backup Bot',
-      gitUserEmail: env.SQLITE_BACKUP_GIT_USER_EMAIL || 'k-vault-backup@users.noreply.github.com',
-      lfsEnabled: toBool(env.SQLITE_BACKUP_GIT_LFS, true),
-    },
+    sqliteBackup: bootstrap.sqliteBackup,
 
     telegramApiBase: telegramApiBase.value,
 
-    // Optional bootstrap default storage from env.
     bootstrapDefaultStorage: {
       type: (env.DEFAULT_STORAGE_TYPE || 'telegram').toLowerCase(),
       telegram: {
@@ -145,7 +184,11 @@ function loadConfig(env = process.env) {
 }
 
 module.exports = {
+  buildSqliteBackupConfig,
+  loadBootstrapConfig,
   loadConfig,
+  resolveBasePaths,
+  resolveDataPath,
   toBool,
   toInt,
 };

@@ -38,6 +38,7 @@ class SqliteGitHubBackup {
     this.repoDir = path.resolve(this.config.repoDir || path.dirname(this.dbPath));
     this.snapshotPath = String(this.config.snapshotPath || 'backups/k-vault.db').replace(/^\/+/, '');
     this.snapshotTempPath = path.join(path.dirname(this.dbPath), '.sqlite-backup.tmp');
+    this.managedFiles = this.normalizeManagedFiles(this.config.managedFiles);
     this.enabled = Boolean(this.config.enabled);
     this.requiredConfigured = Boolean(this.repoUrl && this.config.token);
 
@@ -52,6 +53,19 @@ class SqliteGitHubBackup {
     this.lastRestoreAt = 0;
     this.lastError = '';
     this.stoppedReason = 'idle';
+  }
+
+  normalizeManagedFiles(files = []) {
+    if (!Array.isArray(files)) return [];
+
+    return files
+      .map((file) => {
+        const localPath = file?.localPath ? path.resolve(file.localPath) : '';
+        const repoPath = String(file?.repoPath || '').replace(/^\/+/, '');
+        if (!localPath || !repoPath) return null;
+        return { localPath, repoPath };
+      })
+      .filter(Boolean);
   }
 
   validateConfig() {
@@ -81,6 +95,7 @@ class SqliteGitHubBackup {
       dirty: this.dirty,
       branch: this.config.branch,
       snapshotPath: this.snapshotPath,
+      managedFiles: this.managedFiles.map((file) => file.repoPath),
       lastActivityAt: this.lastActivityAt || null,
       lastBackupAt: this.lastBackupAt || null,
       lastRestoreAt: this.lastRestoreAt || null,
@@ -229,10 +244,16 @@ class SqliteGitHubBackup {
 
     this.validateConfig();
     await this.ensureRepoReady({ syncRemote: true });
+    const restoredManagedFiles = await this.restoreManagedFiles();
 
     const sourcePath = path.join(this.repoDir, this.snapshotPath);
     if (!fs.existsSync(sourcePath)) {
-      return { restored: false, skipped: true, reason: 'missing-backup' };
+      return {
+        restored: false,
+        skipped: true,
+        reason: 'missing-backup',
+        restoredManagedFiles,
+      };
     }
 
     if (!isLikelySqliteFile(sourcePath)) {
@@ -246,7 +267,22 @@ class SqliteGitHubBackup {
 
     console.log(`[sqlite-backup] Restored ${this.snapshotPath} from ${this.config.branch}`);
 
-    return { restored: true, sourcePath };
+    return { restored: true, sourcePath, restoredManagedFiles };
+  }
+
+  async restoreManagedFiles() {
+    const restored = [];
+
+    for (const file of this.managedFiles) {
+      const sourcePath = path.join(this.repoDir, file.repoPath);
+      if (!fs.existsSync(sourcePath)) continue;
+
+      await fsp.mkdir(path.dirname(file.localPath), { recursive: true });
+      await fsp.copyFile(sourcePath, file.localPath);
+      restored.push(file.repoPath);
+    }
+
+    return restored;
   }
 
   recordActivity() {
@@ -324,6 +360,14 @@ class SqliteGitHubBackup {
     await fsp.copyFile(this.snapshotTempPath, repoSnapshotPath);
 
     const stageTargets = [this.snapshotPath];
+    for (const file of this.managedFiles) {
+      if (!fs.existsSync(file.localPath)) continue;
+      const repoManagedPath = path.join(this.repoDir, file.repoPath);
+      await fsp.mkdir(path.dirname(repoManagedPath), { recursive: true });
+      await fsp.copyFile(file.localPath, repoManagedPath);
+      stageTargets.push(file.repoPath);
+    }
+
     const gitattributesPath = path.join(this.repoDir, '.gitattributes');
     if (fs.existsSync(gitattributesPath)) {
       stageTargets.push('.gitattributes');

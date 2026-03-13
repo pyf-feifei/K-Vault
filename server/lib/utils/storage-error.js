@@ -11,6 +11,14 @@ function normalizeErrorMessage(error, fallback = 'Unknown storage error') {
 }
 
 function classifyStorageError(error, status) {
+  if (error?.code === 'SERVER_MISCONFIGURED') {
+    return {
+      code: 'SERVER_MISCONFIGURED',
+      message: error?.detail || 'Server encryption key is not configured. Set CONFIG_ENCRYPTION_KEY or SESSION_SECRET.',
+      retriable: false,
+    };
+  }
+
   const message = normalizeErrorMessage(error).toLowerCase();
   const statusCode = Number(status || 0);
 
@@ -62,6 +70,16 @@ function classifyStorageError(error, status) {
   }
 
   if (
+    byMessage(/\bconfig_encryption_key\b|\bsession_secret\b|\bfile_url_secret\b|encrypted storage configs/)
+  ) {
+    return {
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Server encryption key is not configured. Set CONFIG_ENCRYPTION_KEY or SESSION_SECRET.',
+      retriable: false,
+    };
+  }
+
+  if (
     byMessage(/\bnot configured|missing required|requires .*token|requires .*id\b/)
   ) {
     return {
@@ -90,11 +108,12 @@ function classifyStorageError(error, status) {
 }
 
 function toStorageErrorPayload(error, status) {
-  const normalized = classifyStorageError(error, status);
+  const statusCode = Number(status || error?.status || 0) || undefined;
+  const normalized = classifyStorageError(error, statusCode);
   return {
     ...normalized,
     detail: normalizeErrorMessage(error),
-    status: Number(status || 0) || undefined,
+    status: statusCode,
   };
 }
 

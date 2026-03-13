@@ -1,8 +1,16 @@
-﻿const crypto = require('node:crypto');
+const crypto = require('node:crypto');
+
+function createMissingEncryptionKeyError() {
+  const error = new Error('CONFIG_ENCRYPTION_KEY (or SESSION_SECRET/FILE_URL_SECRET) is required for encrypted storage configs.');
+  error.code = 'SERVER_MISCONFIGURED';
+  error.status = 500;
+  error.detail = 'Set CONFIG_ENCRYPTION_KEY or SESSION_SECRET before saving storage configs.';
+  return error;
+}
 
 function ensureKeyMaterial(secret) {
   if (!secret) {
-    throw new Error('CONFIG_ENCRYPTION_KEY (or SESSION_SECRET/FILE_URL_SECRET) is required for encrypted storage configs.');
+    throw createMissingEncryptionKeyError();
   }
   return crypto.createHash('sha256').update(String(secret)).digest();
 }
