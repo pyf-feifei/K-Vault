@@ -1,7 +1,7 @@
 <template>
   <section class="card panel">
     <div class="panel-head">
-      <h2>Upload Center</h2>
+      <h2>上传中心</h2>
       <div class="storage-group">
         <button
           v-for="mode in modes"
@@ -26,19 +26,19 @@
       @click="openPicker"
     >
       <input ref="picker" type="file" multiple hidden @change="handleFilePick" />
-      <p class="dropzone-title">Drag files here or click to upload</p>
-      <p class="muted">Current target: {{ currentStorageLabel }}</p>
+      <p class="dropzone-title">拖拽文件到此处，或点击上传</p>
+      <p class="muted">当前存储：{{ currentStorageLabel }}</p>
     </div>
 
     <form class="url-row" @submit.prevent="uploadUrl">
       <input v-model.trim="urlInput" placeholder="https://example.com/file.png" />
       <button class="btn" :disabled="urlUploading || !urlInput">
-        {{ urlUploading ? 'Uploading...' : 'Upload URL' }}
+        {{ urlUploading ? '上传中...' : '上传 URL' }}
       </button>
     </form>
 
     <div v-if="queue.length" class="list-wrap">
-      <h3>Queue</h3>
+      <h3>上传队列</h3>
       <ul class="list">
         <li v-for="item in queue" :key="item.id" class="list-item">
           <div class="list-title">
@@ -49,7 +49,7 @@
             <span class="progress-fill" :style="{ width: `${item.progress}%` }"></span>
           </div>
           <div class="list-meta">
-            <span>{{ item.status }}</span>
+            <span>{{ getStatusLabel(item.status) }}</span>
             <span v-if="item.error" class="error">{{ item.error }}</span>
           </div>
         </li>
@@ -57,7 +57,7 @@
     </div>
 
     <div v-if="results.length" class="list-wrap">
-      <h3>Uploaded</h3>
+      <h3>已上传</h3>
       <ul class="list">
         <li v-for="item in results" :key="item.id" class="result-item">
           <div>
@@ -65,8 +65,8 @@
             <p class="muted">{{ item.link }}</p>
           </div>
           <div class="result-actions">
-            <button class="btn btn-ghost" @click="copy(item.link)">Copy</button>
-            <a class="btn btn-ghost" :href="item.link" target="_blank" rel="noopener">Open</a>
+            <button class="btn btn-ghost" @click="copy(item.link)">复制</button>
+            <a class="btn btn-ghost" :href="item.link" target="_blank" rel="noopener">打开</a>
           </div>
         </li>
       </ul>
@@ -106,8 +106,8 @@ const modes = computed(() => {
       label: item.label,
       available,
       hint: available
-        ? 'Ready'
-        : (configured ? (detail.message || 'Configured but unavailable') : 'Not configured'),
+        ? '可用'
+        : (configured ? '已配置但当前不可用' : '未配置'),
     };
   });
 });
@@ -167,7 +167,7 @@ async function processQueue() {
       const selected = modes.value.find((mode) => mode.value === selectedStorage.value);
       if (!selected?.available) {
         item.status = 'error';
-        item.error = 'Selected storage is unavailable. Open Storage/Status to configure it.';
+        item.error = '所选存储当前不可用，请前往“存储配置”或“状态”页面完成配置。';
         continue;
       }
       item.status = 'uploading';
@@ -187,7 +187,7 @@ async function processQueue() {
         });
       } catch (err) {
         item.status = 'error';
-        item.error = humanizeError(err.message || 'Upload failed');
+        item.error = humanizeError(err.message || '上传失败');
       }
     }
   } finally {
@@ -229,9 +229,9 @@ function resolveUploadErrorMessage(payload, statusCode, rawText = '') {
   }
 
   if (rawText) {
-    return `Backend returned non-JSON response (${statusCode}): ${truncate(rawText)}`;
+    return `后端返回了非 JSON 响应（${statusCode}）：${truncate(rawText)}`;
   }
-  return `Upload failed (${statusCode})`;
+  return `上传失败（${statusCode}）`;
 }
 
 function humanizeError(message) {
@@ -239,21 +239,21 @@ function humanizeError(message) {
   const normalized = text.toLowerCase();
 
   if (normalized.includes('auth_failed') || normalized.includes('unauthorized') || normalized.includes('forbidden')) {
-    return `Authentication failed: ${text}`;
+    return `认证失败：${text}`;
   }
   if (normalized.includes('rate') || normalized.includes('too many requests') || normalized.includes('flood')) {
-    return `Rate limited: ${text}`;
+    return `触发频率限制：${text}`;
   }
   if (normalized.includes('quota') || normalized.includes('limit exceeded') || normalized.includes('too large') || normalized.includes('413')) {
-    return `File size or quota exceeded: ${text}`;
+    return `超出文件大小或配额限制：${text}`;
   }
   if (normalized.includes('network') || normalized.includes('timeout') || normalized.includes('fetch failed')) {
-    return `Network or upstream issue: ${text}`;
+    return `网络或上游服务异常：${text}`;
   }
   if (normalized.includes('not configured')) {
-    return `Storage is not configured: ${text}`;
+    return `存储尚未配置：${text}`;
   }
-  return text || 'Upload failed';
+  return text || '上传失败';
 }
 
 function directUpload(item) {
@@ -289,16 +289,16 @@ function directUpload(item) {
 
       if (!src) {
         if (!body) {
-          reject(new Error(`Backend returned non-JSON response: ${truncate(rawText) || '<empty body>'}`));
+          reject(new Error(`后端返回了非 JSON 响应：${truncate(rawText) || '<空响应体>'}`));
           return;
         }
-        reject(new Error('Upload response missing src'));
+        reject(new Error('上传响应缺少 src 字段'));
         return;
       }
       resolve(toAbsoluteUrl(src));
     };
 
-    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.onerror = () => reject(new Error('网络错误'));
     xhr.send(formData);
   });
 }
@@ -358,7 +358,7 @@ async function chunkUpload(item) {
   });
 
   if (!done?.src) {
-    throw new Error('Chunk upload complete response missing src');
+    throw new Error('分片上传完成后响应缺少 src 字段');
   }
 
   return toAbsoluteUrl(done.src);
@@ -368,7 +368,7 @@ async function uploadUrl() {
   if (!urlInput.value || urlUploading.value) return;
   const selected = modes.value.find((mode) => mode.value === selectedStorage.value);
   if (!selected?.available) {
-    error.value = 'Selected storage is unavailable. Open Storage/Status to configure it.';
+    error.value = '所选存储当前不可用，请前往“存储配置”或“状态”页面完成配置。';
     return;
   }
 
@@ -391,18 +391,18 @@ async function uploadUrl() {
 
     const src = Array.isArray(body) ? body[0]?.src : body?.src;
     if (!src) {
-      throw new Error('Upload response missing src');
+      throw new Error('上传响应缺少 src 字段');
     }
 
     results.value.unshift({
       id: `url_${Date.now()}`,
-      fileName: urlInput.value.split('/').pop() || 'remote-file',
+      fileName: urlInput.value.split('/').pop() || '远程文件',
       link: toAbsoluteUrl(src),
     });
 
     urlInput.value = '';
   } catch (err) {
-    error.value = humanizeError(err.message || 'URL upload failed');
+    error.value = humanizeError(err.message || 'URL 上传失败');
   } finally {
     urlUploading.value = false;
   }
@@ -431,5 +431,15 @@ async function copy(text) {
     document.execCommand('copy');
     document.body.removeChild(input);
   }
+}
+
+function getStatusLabel(status) {
+  const map = {
+    pending: '待上传',
+    uploading: '上传中',
+    success: '上传成功',
+    error: '上传失败',
+  };
+  return map[status] || status || '';
 }
 </script>

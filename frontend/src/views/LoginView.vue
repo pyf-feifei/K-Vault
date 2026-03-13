@@ -1,27 +1,27 @@
 <template>
   <div class="app-bg login-page">
     <section class="card login-card">
-      <h1>Sign In</h1>
-      <p class="muted">Use BASIC_USER/BASIC_PASS configured on the backend.</p>
+      <h1>登录</h1>
+      <p class="muted">使用后端配置的 BASIC_USER / BASIC_PASS 登录。</p>
 
       <form class="form-grid" @submit.prevent="submit">
         <label>
-          Username
+          用户名
           <input v-model.trim="username" autocomplete="username" required />
         </label>
         <label>
-          Password
+          密码
           <input v-model="password" type="password" autocomplete="current-password" required />
         </label>
         <button class="btn" :disabled="submitting">
-          {{ submitting ? 'Signing in...' : 'Sign In' }}
+          {{ submitting ? '登录中...' : '登录' }}
         </button>
       </form>
 
       <p v-if="error" class="error">{{ error }}</p>
       <p class="muted link-row">
-        Need the old page?
-        <a href="/login.html" target="_blank" rel="noopener">Open legacy login</a>
+        需要旧版页面？
+        <a href="/login.html" target="_blank" rel="noopener">打开旧版登录页</a>
       </p>
     </section>
   </div>
@@ -60,7 +60,7 @@ async function submit() {
     const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/';
     router.push(target);
   } catch (err) {
-    error.value = err.message || 'Login failed';
+    error.value = err.message || '登录失败';
   } finally {
     submitting.value = false;
   }

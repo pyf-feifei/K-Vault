@@ -2,18 +2,18 @@
   <section class="card panel drive-panel">
     <header class="drive-header">
       <div>
-        <h2>Drive Console</h2>
-        <p class="muted">Upload, organize folders, and copy direct/share links in one place.</p>
+        <h2>文件库</h2>
+        <p class="muted">在一个页面里上传文件、整理目录，并复制直链或分享链接。</p>
       </div>
       <div class="drive-head-actions">
-        <button class="btn btn-ghost" @click="refreshAll">Refresh</button>
+        <button class="btn btn-ghost" @click="refreshAll">刷新</button>
       </div>
     </header>
 
     <section class="adapter-visibility card-lite">
       <div class="adapter-visibility-head">
-        <h3>Storage Capability Visibility</h3>
-        <p class="muted">All adapters stay visible even when not configured.</p>
+        <h3>存储能力总览</h3>
+        <p class="muted">即使未配置，所有适配器也会保持可见。</p>
       </div>
       <div class="adapter-grid">
         <article
@@ -45,37 +45,37 @@
       @click="openPicker"
     >
       <input ref="picker" type="file" multiple hidden @change="handleFilePick" />
-      <p class="dropzone-title">Drop files here or click to upload</p>
-      <p class="muted">Current storage: {{ currentStorageLabel }} | Folder: /{{ currentPath || '' }}</p>
+      <p class="dropzone-title">拖拽文件到此处，或点击上传</p>
+      <p class="muted">当前存储：{{ currentStorageLabel }} | 目录：/{{ currentPath || '' }}</p>
     </section>
 
     <form class="url-row" @submit.prevent="uploadUrl">
       <input v-model.trim="urlInput" placeholder="https://example.com/file.zip" />
       <button class="btn" :disabled="urlUploading || !urlInput">
-        {{ urlUploading ? 'Uploading...' : 'Upload URL to Current Folder' }}
+        {{ urlUploading ? '上传中...' : '上传 URL 到当前目录' }}
       </button>
     </form>
 
     <div v-if="queue.length" class="list-wrap">
-      <h3>Upload Queue</h3>
+      <h3>上传队列</h3>
       <ul class="list">
         <li v-for="item in queue" :key="item.id" class="list-item">
           <div class="list-title">
             <strong>{{ item.file.name }}</strong>
             <span>{{ formatSize(item.file.size) }}</span>
           </div>
-          <p class="muted" v-if="item.relativePath">Relative path: {{ item.relativePath }}</p>
-          <p class="muted">Target folder: /{{ item.targetFolderPath || '' }}</p>
+          <p class="muted" v-if="item.relativePath">相对路径：{{ item.relativePath }}</p>
+          <p class="muted">目标目录：/{{ item.targetFolderPath || '' }}</p>
           <div class="progress-track">
             <span class="progress-fill" :style="{ width: `${item.progress}%` }"></span>
           </div>
           <div class="list-meta">
-            <span>{{ item.status }}</span>
+            <span>{{ getQueueStatusLabel(item.status) }}</span>
             <span v-if="item.error" class="error">{{ item.error }}</span>
           </div>
           <div class="result-actions">
-            <button class="btn btn-ghost" v-if="item.status === 'error'" @click="retryUpload(item.id)">Retry</button>
-            <button class="btn btn-ghost" v-if="item.status === 'uploading'" @click="cancelUpload(item.id)">Cancel</button>
+            <button class="btn btn-ghost" v-if="item.status === 'error'" @click="retryUpload(item.id)">重试</button>
+            <button class="btn btn-ghost" v-if="item.status === 'uploading'" @click="cancelUpload(item.id)">取消</button>
           </div>
         </li>
       </ul>
@@ -84,8 +84,8 @@
     <div class="drive-layout">
       <aside class="folder-tree card-lite">
         <div class="folder-tree-head">
-          <h3>Folders</h3>
-          <button class="btn btn-ghost" @click="promptCreateFolder">New</button>
+          <h3>目录</h3>
+          <button class="btn btn-ghost" @click="promptCreateFolder">新建</button>
         </div>
         <ul class="tree-list">
           <li
@@ -116,17 +116,17 @@
             </button>
           </div>
           <div class="toolbar">
-            <input v-model.trim="search" placeholder="Search in current view" @keyup.enter="reloadExplorer" />
+            <input v-model.trim="search" placeholder="搜索当前视图" @keyup.enter="reloadExplorer" />
             <select v-model="storageFilter" @change="refreshAll">
-              <option value="all">All Storage</option>
+              <option value="all">全部存储</option>
               <option v-for="type in STORAGE_TYPES" :key="type.value" :value="type.value">{{ type.label }}</option>
             </select>
             <select v-model="viewMode">
-              <option value="list">List</option>
-              <option value="grid">Grid</option>
+              <option value="list">列表</option>
+              <option value="grid">网格</option>
             </select>
-            <button class="btn btn-ghost" @click="promptMoveSelected" :disabled="selectedFileIds.length === 0">Move</button>
-            <button class="btn btn-danger" @click="deleteSelected" :disabled="selectedFileIds.length === 0">Delete</button>
+            <button class="btn btn-ghost" @click="promptMoveSelected" :disabled="selectedFileIds.length === 0">移动</button>
+            <button class="btn btn-danger" @click="deleteSelected" :disabled="selectedFileIds.length === 0">删除</button>
           </div>
         </div>
 
@@ -134,12 +134,12 @@
           <article v-for="folder in folders" :key="folder.path" class="folder-card">
             <button class="folder-open" @dblclick="openPath(folder.path)" @click="openPath(folder.path)">
               <strong>{{ folder.name }}</strong>
-              <small>{{ folder.fileCount }} files</small>
+              <small>{{ folder.fileCount }} 个文件</small>
             </button>
             <div class="folder-card-actions">
-              <button class="btn btn-ghost" @click="promptRenameFolder(folder)">Rename</button>
-              <button class="btn btn-ghost" @click="promptMoveFolder(folder)">Move</button>
-              <button class="btn btn-danger" @click="deleteFolderAction(folder)">Delete</button>
+              <button class="btn btn-ghost" @click="promptRenameFolder(folder)">重命名</button>
+              <button class="btn btn-ghost" @click="promptMoveFolder(folder)">移动</button>
+              <button class="btn btn-danger" @click="deleteFolderAction(folder)">删除</button>
             </div>
           </article>
         </div>
@@ -151,16 +151,16 @@
             </label>
             <a :href="fileLink(file.name)" target="_blank" rel="noopener" class="file-preview">
               <img v-if="isImage(file.metadata?.fileName || file.name)" :src="fileLink(file.name)" :alt="file.metadata?.fileName || file.name" />
-              <span v-else>FILE</span>
+              <span v-else>文件</span>
             </a>
             <strong class="file-name">{{ file.metadata?.fileName || file.name }}</strong>
             <small class="muted">{{ formatSize(file.metadata?.fileSize || 0) }}</small>
             <div class="file-actions">
-              <button class="btn btn-ghost" @click="copyDirect(file)">Direct</button>
-              <button class="btn btn-ghost" @click="copyShare(file)">Share</button>
-              <button class="btn btn-ghost" @click="promptRenameFile(file)">Rename</button>
-              <button class="btn btn-ghost" @click="promptMoveFile(file)">Move</button>
-              <button class="btn btn-danger" @click="deleteFile(file)">Delete</button>
+              <button class="btn btn-ghost" @click="copyDirect(file)">直链</button>
+              <button class="btn btn-ghost" @click="copyShare(file)">分享</button>
+              <button class="btn btn-ghost" @click="promptRenameFile(file)">重命名</button>
+              <button class="btn btn-ghost" @click="promptMoveFile(file)">移动</button>
+              <button class="btn btn-danger" @click="deleteFile(file)">删除</button>
             </div>
           </article>
         </div>
@@ -170,11 +170,11 @@
             <thead>
               <tr>
                 <th><input type="checkbox" :checked="allSelected" @change="toggleSelectAll" /></th>
-                <th>Name</th>
-                <th>Storage</th>
-                <th>Size</th>
-                <th>Updated</th>
-                <th>Actions</th>
+                <th>名称</th>
+                <th>存储</th>
+                <th>大小</th>
+                <th>更新时间</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -186,21 +186,21 @@
                     <small>{{ file.name }}</small>
                   </div>
                 </td>
-                <td><span class="badge">{{ file.metadata?.storageType || 'unknown' }}</span></td>
+                <td><span class="badge">{{ file.metadata?.storageType || '未知' }}</span></td>
                 <td>{{ formatSize(file.metadata?.fileSize || 0) }}</td>
                 <td>{{ formatTime(file.metadata?.TimeStamp) }}</td>
                 <td>
                   <div class="table-actions">
-                    <button class="btn btn-ghost" @click="copyDirect(file)">Direct</button>
-                    <button class="btn btn-ghost" @click="copyShare(file)">Share</button>
-                    <button class="btn btn-ghost" @click="promptRenameFile(file)">Rename</button>
-                    <button class="btn btn-ghost" @click="promptMoveFile(file)">Move</button>
-                    <button class="btn btn-danger" @click="deleteFile(file)">Delete</button>
+                    <button class="btn btn-ghost" @click="copyDirect(file)">直链</button>
+                    <button class="btn btn-ghost" @click="copyShare(file)">分享</button>
+                    <button class="btn btn-ghost" @click="promptRenameFile(file)">重命名</button>
+                    <button class="btn btn-ghost" @click="promptMoveFile(file)">移动</button>
+                    <button class="btn btn-danger" @click="deleteFile(file)">删除</button>
                   </div>
                 </td>
               </tr>
               <tr v-if="!loading && files.length === 0">
-                <td colspan="6" class="empty">No files in this folder.</td>
+                <td colspan="6" class="empty">当前目录暂无文件。</td>
               </tr>
             </tbody>
           </table>
@@ -208,7 +208,7 @@
 
         <div class="footer-actions">
           <button v-if="nextCursor" class="btn" :disabled="loading" @click="loadMore">
-            {{ loading ? 'Loading...' : 'Load More' }}
+            {{ loading ? '加载中...' : '加载更多' }}
           </button>
         </div>
       </article>
@@ -247,7 +247,7 @@ const selectedStorage = ref('telegram');
 const treeNodes = ref([]);
 const folders = ref([]);
 const files = ref([]);
-const breadcrumbs = ref([{ path: '', name: 'All Files' }]);
+const breadcrumbs = ref([{ path: '', name: '全部文件' }]);
 const currentPath = ref('');
 const storageFilter = ref('all');
 const search = ref('');
@@ -272,17 +272,17 @@ const capabilityCards = computed(() => {
       type: item.value,
       label: item.label,
       layer: item.layer || 'direct',
-      enableHint: 'Configure this adapter in Storage Config.',
+      enableHint: '请先在“存储配置”中完成配置。',
     }));
 
   return capabilityList.map((cap) => {
     const detail = status.value?.[cap.type] || {};
     const configured = Boolean(detail.configured);
     const available = storageEnabledFromStatus(status.value, cap.type);
-    const layerLabel = cap.layer === 'mounted' ? 'Mounted' : 'Direct';
-    let statusText = 'Not configured';
-    if (available) statusText = 'Available';
-    else if (configured) statusText = detail.message || 'Configured but unavailable';
+    const layerLabel = cap.layer === 'mounted' ? '挂载' : '直连';
+    let statusText = '未配置';
+    if (available) statusText = '可用';
+    else if (configured) statusText = '已配置但当前不可用';
     return {
       ...cap,
       description: STORAGE_TYPES.find((x) => x.value === cap.type)?.description || '',
@@ -290,7 +290,7 @@ const capabilityCards = computed(() => {
       available,
       layerLabel,
       statusText,
-      hint: available ? 'Ready to use' : (detail.message || cap.enableHint || 'Configure to enable'),
+      hint: available ? '可直接使用' : (cap.enableHint || '请先完成配置后再启用'),
     };
   });
 });
@@ -332,7 +332,7 @@ async function refreshStatus() {
       selectedStorage.value = availableModes.value[0]?.type || 'telegram';
     }
   } catch (err) {
-    error.value = err.message || 'Failed to load status';
+    error.value = err.message || '加载状态失败';
   }
 }
 
@@ -344,7 +344,7 @@ async function loadTree() {
   try {
     treeNodes.value = await getDriveTree(storageFilter.value);
   } catch (err) {
-    error.value = err.message || 'Failed to load folder tree';
+    error.value = err.message || '加载目录树失败';
   }
 }
 
@@ -373,7 +373,7 @@ async function loadExplorer(reset) {
     });
 
     folders.value = Array.isArray(data.folders) ? data.folders : [];
-    breadcrumbs.value = Array.isArray(data.breadcrumbs) ? data.breadcrumbs : [{ path: '', name: 'All Files' }];
+    breadcrumbs.value = Array.isArray(data.breadcrumbs) ? data.breadcrumbs : [{ path: '', name: '全部文件' }];
 
     const incomingFiles = Array.isArray(data.files) ? data.files : [];
     if (reset) {
@@ -388,7 +388,7 @@ async function loadExplorer(reset) {
 
     nextCursor.value = data.list_complete ? null : data.cursor;
   } catch (err) {
-    error.value = err.message || 'Failed to load drive explorer';
+    error.value = err.message || '加载文件浏览失败';
   } finally {
     loading.value = false;
   }
@@ -523,7 +523,7 @@ async function processQueue() {
       if (item.status !== 'pending') continue;
       if (!availableModes.value.some((mode) => mode.type === selectedStorage.value)) {
         item.status = 'error';
-        item.error = 'Selected storage is not available.';
+        item.error = '所选存储当前不可用。';
         continue;
       }
 
@@ -546,7 +546,7 @@ async function processQueue() {
           item.error = '';
         } else {
           item.status = 'error';
-          item.error = humanizeError(err.message || 'Upload failed');
+          item.error = humanizeError(err.message || '上传失败');
         }
       }
     }
@@ -581,21 +581,21 @@ function humanizeError(message) {
   const normalized = text.toLowerCase();
 
   if (normalized.includes('auth_failed') || normalized.includes('unauthorized') || normalized.includes('forbidden')) {
-    return `Authentication failed: ${text}`;
+    return `认证失败：${text}`;
   }
   if (normalized.includes('rate') || normalized.includes('too many requests') || normalized.includes('flood')) {
-    return `Rate limited: ${text}`;
+    return `触发频率限制：${text}`;
   }
   if (normalized.includes('quota') || normalized.includes('limit exceeded') || normalized.includes('too large') || normalized.includes('413')) {
-    return `File size or quota exceeded: ${text}`;
+    return `超出文件大小或配额限制：${text}`;
   }
   if (normalized.includes('network') || normalized.includes('timeout') || normalized.includes('fetch failed')) {
-    return `Network or upstream issue: ${text}`;
+    return `网络或上游服务异常：${text}`;
   }
   if (normalized.includes('not configured')) {
-    return `Storage is not configured: ${text}`;
+    return `存储尚未配置：${text}`;
   }
-  return text || 'Upload failed';
+  return text || '上传失败';
 }
 
 function resolveUploadErrorMessage(payload, statusCode, rawText = '') {
@@ -610,9 +610,9 @@ function resolveUploadErrorMessage(payload, statusCode, rawText = '') {
   }
 
   if (rawText) {
-    return `Backend returned non-JSON response (${statusCode}): ${truncate(rawText)}`;
+    return `后端返回了非 JSON 响应（${statusCode}）：${truncate(rawText)}`;
   }
-  return `Upload failed (${statusCode})`;
+  return `上传失败（${statusCode}）`;
 }
 
 function directUpload(item) {
@@ -644,7 +644,7 @@ function directUpload(item) {
         return;
       }
       if (!body) {
-        reject(new Error(`Backend returned non-JSON response: ${truncate(rawText) || '<empty body>'}`));
+        reject(new Error(`后端返回了非 JSON 响应：${truncate(rawText) || '<空响应体>'}`));
         return;
       }
       resolve(body);
@@ -652,13 +652,13 @@ function directUpload(item) {
 
     xhr.onerror = () => {
       item.xhr = null;
-      reject(new Error('Network error'));
+      reject(new Error('网络错误'));
     };
 
     xhr.onabort = () => {
       item.xhr = null;
       item.cancelled = true;
-      reject(new Error('Upload cancelled'));
+      reject(new Error('上传已取消'));
     };
 
     xhr.send(formData);
@@ -688,7 +688,7 @@ async function chunkUpload(item) {
   const chunkSize = Number(init.chunkSize || DEFAULT_CHUNK_SIZE);
 
   for (let index = 0; index < totalChunks; index += 1) {
-    if (item.cancelled) throw new Error('Upload cancelled');
+    if (item.cancelled) throw new Error('上传已取消');
 
     const start = index * chunkSize;
     const end = Math.min(item.file.size, start + chunkSize);
@@ -767,7 +767,7 @@ async function uploadUrl() {
     urlInput.value = '';
     await refreshAll();
   } catch (err) {
-    error.value = humanizeError(err.message || 'URL upload failed');
+    error.value = humanizeError(err.message || 'URL 上传失败');
   } finally {
     urlUploading.value = false;
   }
@@ -790,19 +790,19 @@ function toggleSelectAll() {
 }
 
 async function promptCreateFolder() {
-  const name = window.prompt('Folder name');
+  const name = window.prompt('请输入目录名称');
   if (!name) return;
   const path = joinPath(currentPath.value, name);
   try {
     await createFolder(path);
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Create folder failed';
+    error.value = err.message || '创建目录失败';
   }
 }
 
 async function promptRenameFolder(folder) {
-  const nextName = window.prompt('Rename folder', folder.name);
+  const nextName = window.prompt('重命名目录', folder.name);
   if (!nextName || nextName === folder.name) return;
   const parent = folder.parentPath || '';
   const targetPath = joinPath(parent, nextName);
@@ -813,12 +813,12 @@ async function promptRenameFolder(folder) {
     }
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Rename folder failed';
+    error.value = err.message || '目录重命名失败';
   }
 }
 
 async function promptMoveFolder(folder) {
-  const target = window.prompt('Move folder to path (e.g. assets/images)', folder.path);
+  const target = window.prompt('将目录移动到目标路径（例如 assets/images）', folder.path);
   if (!target || target === folder.path) return;
   try {
     await moveFolder(folder.path, target);
@@ -827,18 +827,18 @@ async function promptMoveFolder(folder) {
     }
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Move folder failed';
+    error.value = err.message || '目录移动失败';
   }
 }
 
 async function deleteFolderAction(folder) {
-  if (!window.confirm(`Delete folder "${folder.name}"?`)) return;
+  if (!window.confirm(`确定删除目录“${folder.name}”吗？`)) return;
   try {
     await deleteFolder(folder.path, false);
     await refreshAll();
   } catch (err) {
     if (String(err.message || '').includes('not empty')) {
-      const recursive = window.confirm('Folder not empty. Delete recursively (including files)?');
+      const recursive = window.confirm('目录非空，是否递归删除（包含文件）？');
       if (!recursive) return;
       try {
         await deleteFolder(folder.path, true);
@@ -847,67 +847,67 @@ async function deleteFolderAction(folder) {
         }
         await refreshAll();
       } catch (nestedError) {
-        error.value = nestedError.message || 'Recursive delete failed';
+        error.value = nestedError.message || '递归删除失败';
       }
       return;
     }
-    error.value = err.message || 'Delete folder failed';
+    error.value = err.message || '删除目录失败';
   }
 }
 
 async function promptRenameFile(file) {
-  const nextName = window.prompt('Rename file', file.metadata?.fileName || file.name);
+  const nextName = window.prompt('重命名文件', file.metadata?.fileName || file.name);
   if (!nextName) return;
   try {
     await renameFile(file.name, nextName);
     await reloadExplorer();
   } catch (err) {
-    error.value = err.message || 'Rename failed';
+    error.value = err.message || '重命名失败';
   }
 }
 
 async function promptMoveFile(file) {
-  const target = window.prompt('Move file to folder path (empty = root)', currentPath.value);
+  const target = window.prompt('将文件移动到目录路径（留空表示根目录）', currentPath.value);
   if (target == null) return;
   try {
     await moveFiles([file.name], target);
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Move failed';
+    error.value = err.message || '移动失败';
   }
 }
 
 async function deleteFile(file) {
-  if (!window.confirm(`Delete ${file.metadata?.fileName || file.name}?`)) return;
+  if (!window.confirm(`确定删除 ${file.metadata?.fileName || file.name} 吗？`)) return;
   try {
     await deleteFiles([file.name]);
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Delete failed';
+    error.value = err.message || '删除失败';
   }
 }
 
 async function promptMoveSelected() {
-  const target = window.prompt('Move selected files to folder path (empty = root)', currentPath.value);
+  const target = window.prompt('将已选文件移动到目录路径（留空表示根目录）', currentPath.value);
   if (target == null) return;
   try {
     await moveFiles(selectedFileIds.value, target);
     selectedFileIds.value = [];
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Batch move failed';
+    error.value = err.message || '批量移动失败';
   }
 }
 
 async function deleteSelected() {
   if (selectedFileIds.value.length === 0) return;
-  if (!window.confirm(`Delete ${selectedFileIds.value.length} selected files?`)) return;
+  if (!window.confirm(`确定删除已选中的 ${selectedFileIds.value.length} 个文件吗？`)) return;
   try {
     await deleteFiles(selectedFileIds.value);
     selectedFileIds.value = [];
     await refreshAll();
   } catch (err) {
-    error.value = err.message || 'Batch delete failed';
+    error.value = err.message || '批量删除失败';
   }
 }
 
@@ -917,17 +917,17 @@ function fileLink(id) {
 
 async function copyDirect(file) {
   await copyText(fileLink(file.name));
-  message.value = 'Direct link copied.';
+  message.value = '直链已复制。';
 }
 
 async function copyShare(file) {
   try {
     const payload = await signShareLink(file.name);
     await copyText(payload.shareUrl);
-    const expireAt = payload.expiresAt ? new Date(payload.expiresAt).toLocaleString() : 'Never';
-    message.value = `Share link copied. Permission: ${payload.permission}. Expires: ${expireAt}.`;
+    const expireAt = payload.expiresAt ? new Date(payload.expiresAt).toLocaleString() : '永不过期';
+    message.value = `分享链接已复制。权限：${payload.permission}。过期时间：${expireAt}。`;
   } catch (err) {
-    error.value = err.message || 'Failed to create share link';
+    error.value = err.message || '创建分享链接失败';
   }
 }
 
@@ -968,5 +968,16 @@ function formatTime(timestamp) {
   } catch {
     return '-';
   }
+}
+
+function getQueueStatusLabel(status) {
+  const map = {
+    pending: '待上传',
+    uploading: '上传中',
+    success: '上传成功',
+    error: '上传失败',
+    cancelled: '已取消',
+  };
+  return map[status] || status || '';
 }
 </script>

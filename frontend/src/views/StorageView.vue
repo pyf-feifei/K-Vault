@@ -1,17 +1,17 @@
-﻿<template>
+<template>
   <section class="card panel storage-panel">
     <div class="panel-head storage-head">
       <div>
-        <h2>Storage Config</h2>
-        <p class="muted">Manage backend profiles, test connectivity, and switch default target.</p>
-        <p class="muted">WebDAV is recommended as a mounted aggregation entry (for example alist/openlist WebDAV endpoint).</p>
+        <h2>存储配置</h2>
+        <p class="muted">管理后端配置、测试连接状态，并切换默认存储目标。</p>
+        <p class="muted">WebDAV 更适合作为挂载型或聚合型入口，例如 alist/openlist 的 WebDAV 地址。</p>
       </div>
-      <button class="btn btn-ghost" @click="resetForm">New Config</button>
+      <button class="btn btn-ghost" @click="resetForm">新建配置</button>
     </div>
 
     <div class="storage-layout">
       <article class="storage-list card-lite">
-        <h3>Configured Backends</h3>
+        <h3>已配置后端</h3>
         <ul v-if="items.length" class="list storage-listing">
           <li v-for="item in items" :key="item.id" class="storage-row">
             <div class="storage-row-main">
@@ -19,9 +19,9 @@
                 <strong>{{ item.name }}</strong>
                 <span class="badge">{{ getStorageLabel(item.type) }}</span>
                 <span class="badge" :class="item.enabled ? 'badge-ok' : 'badge-danger'">
-                  {{ item.enabled ? 'Enabled' : 'Disabled' }}
+                  {{ item.enabled ? '已启用' : '已禁用' }}
                 </span>
-                <span class="badge" v-if="item.isDefault">Default</span>
+                <span class="badge" v-if="item.isDefault">默认</span>
               </div>
               <p class="muted">ID: {{ item.id }}</p>
               <p v-if="testResults[item.id]" class="storage-test" :class="testResults[item.id].connected ? 'ok' : 'fail'">
@@ -30,43 +30,43 @@
             </div>
 
             <div class="storage-actions">
-              <button class="btn btn-ghost" @click="editItem(item)">Edit</button>
-              <button class="btn btn-ghost" @click="testItem(item.id)">Test</button>
+              <button class="btn btn-ghost" @click="editItem(item)">编辑</button>
+              <button class="btn btn-ghost" @click="testItem(item.id)">测试</button>
               <button class="btn btn-ghost" @click="toggleEnabled(item)">
-                {{ item.enabled ? 'Disable' : 'Enable' }}
+                {{ item.enabled ? '禁用' : '启用' }}
               </button>
-              <button class="btn btn-ghost" @click="setDefault(item.id)" :disabled="item.isDefault">Set Default</button>
-              <button class="btn btn-danger" @click="removeItem(item.id)">Delete</button>
+              <button class="btn btn-ghost" @click="setDefault(item.id)" :disabled="item.isDefault">设为默认</button>
+              <button class="btn btn-danger" @click="removeItem(item.id)">删除</button>
             </div>
           </li>
         </ul>
-        <p v-else class="muted">No storage config yet.</p>
+        <p v-else class="muted">暂无存储配置。</p>
       </article>
 
       <article class="storage-editor card-lite">
-        <h3>{{ editingId ? 'Edit Storage' : 'Create Storage' }}</h3>
+        <h3>{{ editingId ? '编辑存储' : '新建存储' }}</h3>
 
         <form class="form-grid" @submit.prevent="submit">
           <label>
-            Name
-            <input v-model.trim="form.name" required placeholder="Readable name" />
+            名称
+            <input v-model.trim="form.name" required placeholder="便于识别的名称" />
           </label>
 
           <label>
-            Type
+            类型
             <select v-model="form.type" @change="onTypeChanged">
-              <optgroup label="Direct Upload Backends">
+              <optgroup label="直连上传后端">
                 <option v-for="type in directTypes" :key="type.value" :value="type.value">{{ type.label }}</option>
               </optgroup>
-              <optgroup label="Mounted / Aggregation Backends">
+              <optgroup label="挂载 / 聚合后端">
                 <option v-for="type in mountedTypes" :key="type.value" :value="type.value">{{ type.label }}</option>
               </optgroup>
             </select>
           </label>
 
           <div class="toggle-row">
-            <label><input v-model="form.enabled" type="checkbox" /> Enabled</label>
-            <label><input v-model="form.isDefault" type="checkbox" /> Set as default</label>
+            <label><input v-model="form.enabled" type="checkbox" /> 启用</label>
+            <label><input v-model="form.isDefault" type="checkbox" /> 设为默认</label>
           </div>
 
           <div class="field-grid">
@@ -108,15 +108,15 @@
           <p v-if="STORAGE_NOTES[form.type]" class="muted">{{ STORAGE_NOTES[form.type] }}</p>
 
           <div class="form-actions">
-            <button class="btn" :disabled="saving">{{ saving ? 'Saving...' : 'Save Config' }}</button>
+            <button class="btn" :disabled="saving">{{ saving ? '保存中...' : '保存配置' }}</button>
             <button class="btn btn-ghost" type="button" :disabled="testing" @click="testDraftConfig">
-              {{ testing ? 'Testing...' : 'Test Draft' }}
+              {{ testing ? '测试中...' : '测试草稿配置' }}
             </button>
           </div>
         </form>
 
         <div v-if="draftTest" class="test-detail" :class="draftTest.connected ? 'ok' : 'fail'">
-          <strong>{{ draftTest.connected ? 'Draft connection successful' : 'Draft connection failed' }}</strong>
+          <strong>{{ draftTest.connected ? '草稿连接成功' : '草稿连接失败' }}</strong>
           <pre>{{ stringifyDetail(draftTest) }}</pre>
         </div>
       </article>
@@ -194,7 +194,7 @@ async function loadItems() {
   try {
     items.value = await listStorageConfigs();
   } catch (err) {
-    error.value = err.message || 'Failed to load storage configs.';
+    error.value = err.message || '加载存储配置失败。';
   }
 }
 
@@ -245,17 +245,17 @@ async function submit() {
     const payload = buildPayload();
     if (editingId.value) {
       await updateStorageConfig(editingId.value, payload);
-      message.value = 'Storage config updated.';
+      message.value = '存储配置已更新。';
     } else {
       await createStorageConfig(payload);
-      const successMessage = 'Storage config created.';
+      const successMessage = '存储配置已创建。';
       resetForm();
       message.value = successMessage;
     }
 
     await loadItems();
   } catch (err) {
-    error.value = err.message || 'Save failed';
+    error.value = err.message || '保存失败';
   } finally {
     saving.value = false;
   }
@@ -269,10 +269,10 @@ async function testDraftConfig() {
   try {
     const result = await testStorageDraft(form.type, { ...form.config });
     draftTest.value = result || { connected: false };
-    message.value = result?.connected ? 'Draft test succeeded.' : 'Draft test failed.';
+    message.value = result?.connected ? '草稿测试成功。' : '草稿测试失败。';
   } catch (err) {
     draftTest.value = null;
-    error.value = err.message || 'Connection test failed';
+    error.value = err.message || '连接测试失败';
   } finally {
     testing.value = false;
   }
@@ -288,9 +288,9 @@ async function testItem(id) {
       ...(result || {}),
       testedAt: Date.now(),
     };
-    message.value = result?.connected ? 'Connection successful.' : 'Connection failed.';
+    message.value = result?.connected ? '连接成功。' : '连接失败。';
   } catch (err) {
-    error.value = err.message || 'Storage test failed';
+    error.value = err.message || '存储测试失败';
   }
 }
 
@@ -302,10 +302,10 @@ async function toggleEnabled(item) {
     await updateStorageConfig(item.id, {
       enabled: !item.enabled,
     });
-    message.value = 'Storage status updated.';
+    message.value = '存储状态已更新。';
     await loadItems();
   } catch (err) {
-    error.value = err.message || 'Update failed';
+    error.value = err.message || '更新失败';
   }
 }
 
@@ -315,35 +315,35 @@ async function setDefault(id) {
 
   try {
     await setDefaultStorageConfig(id);
-    message.value = 'Default storage updated.';
+    message.value = '默认存储已更新。';
     await loadItems();
   } catch (err) {
-    error.value = err.message || 'Set default failed';
+    error.value = err.message || '设置默认存储失败';
   }
 }
 
 async function removeItem(id) {
-  if (!window.confirm('Delete this storage config?')) return;
+  if (!window.confirm('确认删除这个存储配置吗？')) return;
 
   error.value = '';
   message.value = '';
 
   try {
     await deleteStorageConfig(id);
-    message.value = 'Storage config deleted.';
+    message.value = '存储配置已删除。';
     await loadItems();
 
     if (editingId.value === id) {
       resetForm();
     }
   } catch (err) {
-    error.value = err.message || 'Delete failed';
+    error.value = err.message || '删除失败';
   }
 }
 
 function formatTestMessage(result) {
-  const statusText = result.connected ? 'Connected' : 'Failed';
-  const statusCode = result.status ? ` (HTTP ${result.status})` : '';
+  const statusText = result.connected ? '已连接' : '失败';
+  const statusCode = result.status ? `（HTTP ${result.status}）` : '';
   const detail = result.detail ? ` - ${String(result.detail)}` : '';
   return `${statusText}${statusCode}${detail}`;
 }

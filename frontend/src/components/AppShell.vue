@@ -5,15 +5,15 @@
         <span class="brand-dot"></span>
         <div>
           <h1>K-Vault</h1>
-          <p>Docker + Cloudflare dual-mode runtime</p>
+          <p>Docker + Cloudflare 双模式运行</p>
         </div>
       </div>
       <nav class="nav-row">
-        <router-link class="nav-link" to="/">Upload</router-link>
-        <router-link class="nav-link" to="/drive">Drive</router-link>
-        <router-link class="nav-link" to="/storage">Storage</router-link>
-        <router-link class="nav-link" to="/status">Status</router-link>
-        <a class="nav-link" href="/legacy/index.html" target="_blank" rel="noopener">Legacy</a>
+        <router-link class="nav-link" to="/">上传</router-link>
+        <router-link class="nav-link" to="/drive">文件库</router-link>
+        <router-link class="nav-link" to="/storage">存储配置</router-link>
+        <router-link class="nav-link" to="/status">状态</router-link>
+        <a class="nav-link" href="/legacy/index.html" target="_blank" rel="noopener">旧版</a>
       </nav>
       <div class="toolbar">
         <router-link
@@ -21,17 +21,17 @@
           class="btn btn-ghost"
           to="/login"
         >
-          Login
+          登录
         </router-link>
-        <button v-if="authStore.authenticated" class="btn btn-ghost" @click="handleLogout">Logout</button>
+        <button v-if="authStore.authenticated" class="btn btn-ghost" @click="handleLogout">退出</button>
       </div>
     </header>
 
     <section v-if="authStore.guestMode" class="guest-note card">
-      <strong>Guest mode enabled.</strong>
+      <strong>访客模式已启用。</strong>
       <span>
-        Max file size: {{ formatSize(authStore.guestUpload.maxFileSize) }},
-        daily limit: {{ authStore.guestUpload.dailyLimit }} uploads.
+        单文件上限：{{ formatSize(authStore.guestUpload.maxFileSize) }}，
+        每日最多 {{ authStore.guestUpload.dailyLimit }} 次上传。
       </span>
     </section>
 

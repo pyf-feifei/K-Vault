@@ -52,11 +52,11 @@ export async function apiFetch(path, options = {}) {
   const payload = isJson ? parsed : text;
 
   if (!response.ok) {
-    const fallback = `Request failed: ${response.status}`;
-    const snippet = text ? ` | response: ${truncate(text)}` : ' | response: <empty>';
+    const fallback = `请求失败：${response.status}`;
+    const snippet = text ? ` | 响应：${truncate(text)}` : ' | 响应：<空>';
     const message = isJson
       ? resolveErrorMessage(payload, fallback)
-      : `Backend returned non-JSON response (${response.status})${snippet}`;
+      : `后端返回了非 JSON 响应（${response.status}）${snippet}`;
 
     const error = new Error(message);
     error.status = response.status;
@@ -66,7 +66,7 @@ export async function apiFetch(path, options = {}) {
 
   if (isPlainObject(payload) && typeof payload.success === 'boolean') {
     if (!payload.success) {
-      const message = resolveErrorMessage(payload, 'Request failed.');
+      const message = resolveErrorMessage(payload, '请求失败。');
       const error = new Error(message);
       error.status = response.status;
       error.payload = payload;
