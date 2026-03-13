@@ -1,4 +1,4 @@
-﻿function normalizeToken(value) {
+function normalizeToken(value) {
   if (!value) return '';
   return String(value).replace(/^Bearer\s+/i, '').trim();
 }
@@ -16,12 +16,89 @@ function toBase64(buffer) {
   return Buffer.from(buffer).toString('base64');
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function commitUrl(repo, branch = 'main') {
   return `https://huggingface.co/api/datasets/${repo}/commit/${encodeURIComponent(branch)}`;
 }
 
 function resolveUrl(repo, pathInRepo) {
   return `https://huggingface.co/datasets/${repo}/resolve/main/${pathInRepo}`;
+}
+
+function shouldRetryStatus(status) {
+  return [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(status || 0));
+}
+
+function isRetryableError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.name === 'AbortError'
+    || /\bfetch failed|timed out|timeout|socket|econn|enotfound|eai_again\b/.test(message);
+}
+
+async function parseErrorBody(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const json = await response.json().catch(() => ({}));
+    return json.error || json.message || JSON.stringify(json);
+  }
+  return response.text().catch(() => '');
+}
+
+async function discardResponseBody(response) {
+  try {
+    await response.arrayBuffer();
+  } catch {
+    // best effort
+  }
+}
+
+async function fetchWithRetry(url, options = {}, retryOptions = {}) {
+  const {
+    timeoutMs = 15000,
+    retries = 2,
+    retryDelayMs = 1000,
+    operation = 'HuggingFace request',
+  } = retryOptions;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (shouldRetryStatus(response.status) && attempt < retries) {
+        await discardResponseBody(response);
+        await delay(retryDelayMs * (attempt + 1));
+        continue;
+      }
+
+      return response;
+    } catch (error) {
+      clearTimeout(timer);
+
+      if (attempt < retries && isRetryableError(error)) {
+        await delay(retryDelayMs * (attempt + 1));
+        continue;
+      }
+
+      if (error?.name === 'AbortError') {
+        throw new Error(`${operation} timed out after ${timeoutMs}ms.`);
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error(`${operation} failed after ${retries + 1} attempts.`);
 }
 
 class HuggingFaceStorageAdapter {
@@ -49,9 +126,18 @@ class HuggingFaceStorageAdapter {
   async testConnection() {
     this.validate();
 
-    const response = await fetch(`https://huggingface.co/api/datasets/${this.config.repo}`, {
-      headers: this.authHeaders(),
-    });
+    const response = await fetchWithRetry(
+      `https://huggingface.co/api/datasets/${this.config.repo}`,
+      {
+        headers: this.authHeaders(),
+      },
+      {
+        timeoutMs: 15000,
+        retries: 2,
+        retryDelayMs: 1000,
+        operation: 'HuggingFace connection test',
+      }
+    );
 
     return {
       connected: response.ok,
@@ -62,7 +148,6 @@ class HuggingFaceStorageAdapter {
   async upload({ storageKey, buffer, fileName }) {
     this.validate();
 
-    // Basic implementation keeps reliability high; large files should use S3/R2/Telegram.
     const maxSize = 35 * 1024 * 1024;
     if (buffer.byteLength > maxSize) {
       throw new Error('HuggingFace regular upload limit exceeded (35MB).');
@@ -81,11 +166,20 @@ class HuggingFaceStorageAdapter {
       }),
     ].join('\n');
 
-    const response = await fetch(commitUrl(this.config.repo), {
-      method: 'POST',
-      headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
-      body,
-    });
+    const response = await fetchWithRetry(
+      commitUrl(this.config.repo),
+      {
+        method: 'POST',
+        headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
+        body,
+      },
+      {
+        timeoutMs: 120000,
+        retries: 2,
+        retryDelayMs: 2000,
+        operation: 'HuggingFace upload',
+      }
+    );
 
     const json = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -109,14 +203,24 @@ class HuggingFaceStorageAdapter {
     }
     if (range) headers.Range = range;
 
-    const response = await fetch(resolveUrl(this.config.repo, pathInRepo), {
-      headers,
-      redirect: 'follow',
-    });
+    const response = await fetchWithRetry(
+      resolveUrl(this.config.repo, pathInRepo),
+      {
+        headers,
+        redirect: 'follow',
+      },
+      {
+        timeoutMs: 30000,
+        retries: 2,
+        retryDelayMs: 1000,
+        operation: 'HuggingFace download',
+      }
+    );
 
     if (!response.ok && response.status !== 206) {
       if (response.status === 404) return null;
-      throw new Error(`HuggingFace download failed (${response.status}).`);
+      const detail = await parseErrorBody(response);
+      throw new Error(detail || `HuggingFace download failed (${response.status}).`);
     }
 
     return response;
@@ -131,11 +235,20 @@ class HuggingFaceStorageAdapter {
       JSON.stringify({ key: 'deletedFile', value: { path: pathInRepo } }),
     ].join('\n');
 
-    const response = await fetch(commitUrl(this.config.repo), {
-      method: 'POST',
-      headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
-      body,
-    });
+    const response = await fetchWithRetry(
+      commitUrl(this.config.repo),
+      {
+        method: 'POST',
+        headers: this.authHeaders({ 'Content-Type': 'application/x-ndjson' }),
+        body,
+      },
+      {
+        timeoutMs: 60000,
+        retries: 2,
+        retryDelayMs: 1500,
+        operation: 'HuggingFace delete',
+      }
+    );
 
     return Boolean(response.ok);
   }
