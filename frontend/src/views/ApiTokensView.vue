@@ -5,66 +5,13 @@
         <h2>API Tokens</h2>
         <p class="muted">为其他系统签发 Bearer Token，用于无网页登录上传。默认不限制存储或目录，只有配置时才生效。</p>
       </div>
-      <button class="btn btn-ghost" @click="loadTokens" :disabled="loading">
-        {{ loading ? '刷新中...' : '刷新' }}
-      </button>
-    </div>
-
-    <section class="card-lite diagnostic-card">
-      <h3>{{ editingId ? '编辑 Token' : '新建 Token' }}</h3>
-      <form class="form-grid" @submit.prevent="submitCreate">
-        <label>
-          <span>名称</span>
-          <input v-model.trim="form.name" required placeholder="例如：cms-uploader" />
-        </label>
-        <label>
-          <span>有效期（天）</span>
-          <input v-model.number="form.expiresInDays" type="number" min="1" step="1" placeholder="可留空表示不过期" />
-        </label>
-        <label class="cache-settings-toggle">
-          <input v-model="form.enabled" type="checkbox" />
-          创建后立即启用
-        </label>
-        <div class="token-scope-list">
-          <label v-for="scope in scopes" :key="scope" class="cache-settings-toggle">
-            <input v-model="form.scopes" type="checkbox" :value="scope" />
-            {{ scope }}
-          </label>
-        </div>
-        <label>
-          <span>限制存储配置（可选）</span>
-          <select v-model="form.restrictions.storageConfigId">
-            <option value="">不限制</option>
-            <option v-for="item in storageOptions" :key="item.id" :value="item.id">
-              {{ item.name }} ({{ item.type }})
-            </option>
-          </select>
-        </label>
-        <label>
-          <span>限制目录前缀（可选）</span>
-          <input v-model.trim="form.restrictions.folderPath" placeholder="例如 media/videos" />
-        </label>
-        <div class="form-actions">
-          <button class="btn" type="submit" :disabled="saving">
-            {{ saving ? (editingId ? '保存中...' : '创建中...') : (editingId ? '保存 Token' : '创建 Token') }}
-          </button>
-          <button v-if="editingId" class="btn btn-ghost" type="button" :disabled="saving" @click="resetForm">
-            取消编辑
-          </button>
-        </div>
-      </form>
-
-      <div v-if="latestToken" class="test-detail ok">
-        <strong>{{ latestTokenReason }}</strong>
-        <input :value="latestToken" readonly class="token-display-input" @focus="$event.target.select()" />
-        <div class="form-actions">
-          <button class="btn btn-ghost" type="button" @click="copy(latestToken, 'Token 已复制。')">复制 Token</button>
-          <button class="btn btn-ghost" type="button" @click="copy(uploadExample, '上传命令已复制。')">复制命令</button>
-        </div>
-        <p class="muted">明文 Token 只会在创建时展示一次，刷新页面后无法再恢复。</p>
-        <pre>{{ uploadExample }}</pre>
+      <div class="form-actions">
+        <button class="btn" type="button" @click="openCreateDialog">新建 Token</button>
+        <button class="btn btn-ghost" type="button" @click="loadTokens" :disabled="loading">
+          {{ loading ? '刷新中...' : '刷新' }}
+        </button>
       </div>
-    </section>
+    </div>
 
     <section class="card-lite diagnostic-card">
       <h3>已签发 Token</h3>
@@ -149,6 +96,73 @@
 
     <p v-if="message" class="muted">{{ message }}</p>
     <p v-if="error" class="error">{{ error }}</p>
+
+    <div v-if="dialogOpen" class="modal-backdrop" @click.self="closeDialog">
+      <section class="card modal-card">
+        <div class="modal-head">
+          <div>
+            <h3>{{ editingId ? '编辑 Token' : '新建 Token' }}</h3>
+            <p class="muted">
+              {{ latestToken ? 'Token 已创建，记得立即复制保存。' : '配置权限、有效期以及可选的上传限制。' }}
+            </p>
+          </div>
+          <button class="btn btn-ghost" type="button" @click="closeDialog">关闭</button>
+        </div>
+
+        <form class="form-grid" @submit.prevent="submitCreate">
+          <label>
+            <span>名称</span>
+            <input v-model.trim="form.name" required placeholder="例如：cms-uploader" />
+          </label>
+          <label>
+            <span>有效期（天）</span>
+            <input v-model.number="form.expiresInDays" type="number" min="1" step="1" placeholder="可留空表示不过期" />
+          </label>
+          <label class="cache-settings-toggle">
+            <input v-model="form.enabled" type="checkbox" />
+            创建后立即启用
+          </label>
+          <div class="token-scope-list">
+            <label v-for="scope in scopes" :key="scope" class="cache-settings-toggle">
+              <input v-model="form.scopes" type="checkbox" :value="scope" />
+              {{ scope }}
+            </label>
+          </div>
+          <label>
+            <span>限制存储配置（可选）</span>
+            <select v-model="form.restrictions.storageConfigId">
+              <option value="">不限制</option>
+              <option v-for="item in storageOptions" :key="item.id" :value="item.id">
+                {{ item.name }} ({{ item.type }})
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>限制目录前缀（可选）</span>
+            <input v-model.trim="form.restrictions.folderPath" placeholder="例如 media/videos" />
+          </label>
+          <div class="form-actions">
+            <button class="btn" type="submit" :disabled="saving">
+              {{ saving ? (editingId ? '保存中...' : '创建中...') : (editingId ? '保存 Token' : '创建 Token') }}
+            </button>
+            <button v-if="editingId" class="btn btn-ghost" type="button" :disabled="saving" @click="resetForm">
+              取消编辑
+            </button>
+          </div>
+        </form>
+
+        <div v-if="latestToken" class="test-detail ok">
+          <strong>{{ latestTokenReason }}</strong>
+          <input :value="latestToken" readonly class="token-display-input" @focus="$event.target.select()" />
+          <div class="form-actions">
+            <button class="btn btn-ghost" type="button" @click="copy(latestToken, 'Token 已复制。')">复制 Token</button>
+            <button class="btn btn-ghost" type="button" @click="copy(uploadExample, '上传命令已复制。')">复制命令</button>
+          </div>
+          <p class="muted">明文 Token 只会在创建或重新生成后展示一次，关闭弹窗后仍可在列表中复制。</p>
+          <pre>{{ uploadExample }}</pre>
+        </div>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -170,6 +184,7 @@ const latestTokenId = ref('');
 const latestTokenReason = ref('新 Token 已创建');
 const tokenSecrets = ref({});
 const editingId = ref('');
+const dialogOpen = ref(false);
 const form = reactive({
   name: '',
   scopes: ['upload'],
@@ -235,6 +250,7 @@ async function submitCreate() {
       latestToken.value = '';
       latestTokenId.value = '';
       message.value = 'API Token 已更新。';
+      dialogOpen.value = false;
     } else {
       const created = await createApiToken(payload);
       latestToken.value = created.token || '';
@@ -258,6 +274,7 @@ async function submitCreate() {
 }
 
 function editToken(token) {
+  dialogOpen.value = true;
   editingId.value = token.id;
   latestToken.value = '';
   latestTokenId.value = '';
@@ -279,6 +296,26 @@ function resetForm() {
   form.enabled = true;
   form.restrictions.storageConfigId = '';
   form.restrictions.folderPath = '';
+}
+
+function openCreateDialog() {
+  resetForm();
+  latestToken.value = '';
+  latestTokenId.value = '';
+  latestTokenReason.value = '新 Token 已创建';
+  message.value = '';
+  error.value = '';
+  dialogOpen.value = true;
+}
+
+function closeDialog() {
+  dialogOpen.value = false;
+  resetForm();
+  latestToken.value = '';
+  latestTokenId.value = '';
+  latestTokenReason.value = '新 Token 已创建';
+  message.value = '';
+  error.value = '';
 }
 
 async function toggleToken(token) {
