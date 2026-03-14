@@ -88,6 +88,19 @@ describe('API token management endpoints', function () {
       const patched = JSON.parse(await patchResponse.text());
       assert.strictEqual(patchResponse.status, 200);
       assert.strictEqual(patched.tokenInfo.enabled, false);
+
+      const rotateResponse = await app.fetch(new Request(`http://localhost/api/tokens/${listed.tokens[0].id}/rotate`, {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          Accept: 'application/vnd.kvault.v2+json',
+          'X-KVault-Client': 'app-v2',
+        },
+      }));
+      const rotated = JSON.parse(await rotateResponse.text());
+      assert.strictEqual(rotateResponse.status, 200);
+      assert.ok(/^kvault_/.test(rotated.token));
+      assert.strictEqual(rotated.tokenInfo.id, listed.tokens[0].id);
     } finally {
       await app.container.close();
     }

@@ -690,6 +690,24 @@ async function createApp() {
     return c.json({ success: true });
   });
 
+  app.post('/api/tokens/:id/rotate', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { apiTokenRepo } = getServices(c);
+    const id = c.req.param('id');
+    const rotated = apiTokenRepo.rotate(id);
+    if (!rotated) {
+      return jsonError(c, 404, 'TOKEN_NOT_FOUND', 'API Token not found.', `API Token "${id}" does not exist.`);
+    }
+
+    return c.json({
+      success: true,
+      token: rotated.token,
+      tokenInfo: rotated.tokenInfo,
+    });
+  });
+
   app.get('/api/ui-config', async (c) => {
     const config = await readUiConfig();
     return c.json({

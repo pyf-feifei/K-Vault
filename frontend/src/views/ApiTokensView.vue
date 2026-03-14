@@ -55,7 +55,7 @@
       </form>
 
       <div v-if="latestToken" class="test-detail ok">
-        <strong>新 Token 已创建</strong>
+        <strong>{{ latestTokenReason }}</strong>
         <input :value="latestToken" readonly class="token-display-input" @focus="$event.target.select()" />
         <div class="form-actions">
           <button class="btn btn-ghost" type="button" @click="copy(latestToken, 'Token 已复制。')">复制 Token</button>
@@ -102,6 +102,7 @@
               <td>{{ token.tokenPreview }}</td>
               <td>
                 <div class="form-actions">
+                  <button class="btn btn-ghost" type="button" @click="copyTokenForRow(token)">复制 Token</button>
                   <button class="btn btn-ghost" type="button" @click="editToken(token)">编辑</button>
                   <button class="btn btn-ghost" type="button" @click="toggleToken(token)">
                     {{ token.enabled ? '禁用' : '启用' }}
@@ -125,7 +126,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { createApiToken, deleteApiToken, listApiTokens, updateApiToken } from '../api/tokens';
+import { createApiToken, deleteApiToken, listApiTokens, rotateApiToken, updateApiToken } from '../api/tokens';
 import { getApiBase } from '../api/client';
 import { listStorageConfigs } from '../api/storage';
 
@@ -137,6 +138,9 @@ const tokens = ref([]);
 const scopes = ref([]);
 const storageOptions = ref([]);
 const latestToken = ref('');
+const latestTokenId = ref('');
+const latestTokenReason = ref('新 Token 已创建');
+const tokenSecrets = ref({});
 const editingId = ref('');
 const form = reactive({
   name: '',
@@ -201,10 +205,19 @@ async function submitCreate() {
     if (editingId.value) {
       await updateApiToken(editingId.value, payload);
       latestToken.value = '';
+      latestTokenId.value = '';
       message.value = 'API Token 已更新。';
     } else {
       const created = await createApiToken(payload);
       latestToken.value = created.token || '';
+      latestTokenId.value = created.tokenInfo?.id || '';
+      latestTokenReason.value = '新 Token 已创建';
+      if (created.tokenInfo?.id && created.token) {
+        tokenSecrets.value = {
+          ...tokenSecrets.value,
+          [created.tokenInfo.id]: created.token,
+        };
+      }
       message.value = 'API Token 已创建。';
     }
     resetForm();
@@ -219,6 +232,7 @@ async function submitCreate() {
 function editToken(token) {
   editingId.value = token.id;
   latestToken.value = '';
+  latestTokenId.value = '';
   form.name = token.name;
   form.scopes = [...(token.scopes || [])];
   form.expiresInDays = null;
@@ -259,10 +273,48 @@ async function removeToken(id) {
   message.value = '';
   try {
     await deleteApiToken(id);
+    const nextSecrets = { ...tokenSecrets.value };
+    delete nextSecrets[id];
+    tokenSecrets.value = nextSecrets;
     message.value = 'API Token 已删除。';
     await loadTokens();
   } catch (err) {
     error.value = err.message || '删除失败';
+  }
+}
+
+async function copyTokenForRow(token) {
+  error.value = '';
+  message.value = '';
+
+  const existing = tokenSecrets.value[token.id];
+  if (existing) {
+    await copy(existing, 'Token 已复制。');
+    return;
+  }
+
+  const confirmed = window.confirm('这个 Token 的明文已不可恢复。是否立即重新生成并复制？旧 Token 会立刻失效。');
+  if (!confirmed) return;
+
+  try {
+    const rotated = await rotateApiToken(token.id);
+    const nextToken = rotated.token || '';
+    if (!nextToken) {
+      throw new Error('重新生成后未返回新的 Token。');
+    }
+
+    tokenSecrets.value = {
+      ...tokenSecrets.value,
+      [token.id]: nextToken,
+    };
+    latestToken.value = nextToken;
+    latestTokenId.value = token.id;
+    latestTokenReason.value = 'Token 已重新生成';
+    await copy(nextToken, '新 Token 已复制。');
+    message.value = 'API Token 已重新生成。旧 Token 已失效。';
+    await loadTokens();
+  } catch (err) {
+    error.value = err.message || '重新生成 Token 失败';
   }
 }
 

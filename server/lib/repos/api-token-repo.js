@@ -177,6 +177,29 @@ class ApiTokenRepository {
     };
   }
 
+  rotate(id) {
+    const current = this.getById(id);
+    if (!current) return null;
+
+    const tokenSecret = randomString(40);
+    const tokenSalt = randomString(16);
+    const tokenHash = hashSecret(tokenSecret, tokenSalt);
+    const tokenSuffix = tokenSecret.slice(-6);
+
+    run(
+      this.db,
+      `UPDATE api_tokens
+       SET token_salt = ?, token_hash = ?, token_suffix = ?
+       WHERE id = ?`,
+      [tokenSalt, tokenHash, tokenSuffix, current.id]
+    );
+
+    return {
+      token: `${TOKEN_PREFIX}${current.id}_${tokenSecret}`,
+      tokenInfo: toPublicToken(this.getById(id)),
+    };
+  }
+
   update(id, patch = {}) {
     const current = this.getById(id);
     if (!current) return null;

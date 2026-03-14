@@ -29,3 +29,9 @@ export async function deleteApiToken(id) {
     method: 'DELETE',
   });
 }
+
+export async function rotateApiToken(id) {
+  return apiFetch(`/api/tokens/${encodeURIComponent(id)}/rotate`, {
+    method: 'POST',
+  });
+}
