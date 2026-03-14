@@ -153,7 +153,9 @@
               <img v-if="isImage(file.metadata?.fileName || file.name)" :src="fileLink(file.name)" :alt="file.metadata?.fileName || file.name" />
               <span v-else>文件</span>
             </a>
-            <strong class="file-name">{{ file.metadata?.fileName || file.name }}</strong>
+            <button class="file-name file-name-button" @click="openPreview(file)">
+              {{ file.metadata?.fileName || file.name }}
+            </button>
             <small class="muted">{{ formatSize(file.metadata?.fileSize || 0) }}</small>
             <div class="file-actions">
               <button class="btn btn-ghost" @click="copyDirect(file)">直链</button>
@@ -182,7 +184,9 @@
                 <td><input type="checkbox" :checked="selectedSet.has(file.name)" @change="toggleFileSelection(file.name)" /></td>
                 <td>
                   <div class="file-col">
-                    <strong>{{ file.metadata?.fileName || file.name }}</strong>
+                    <button class="file-name-button file-name-inline" @click="openPreview(file)">
+                      {{ file.metadata?.fileName || file.name }}
+                    </button>
                     <small>{{ file.name }}</small>
                   </div>
                 </td>
@@ -190,7 +194,7 @@
                 <td>{{ formatSize(file.metadata?.fileSize || 0) }}</td>
                 <td>{{ formatTime(file.metadata?.TimeStamp) }}</td>
                 <td>
-                  <div class="table-actions">
+                  <div class="table-actions file-table-actions">
                     <button class="btn btn-ghost" @click="copyDirect(file)">直链</button>
                     <button class="btn btn-ghost" @click="copyShare(file)">分享</button>
                     <button class="btn btn-ghost" @click="promptRenameFile(file)">重命名</button>
@@ -216,6 +220,52 @@
 
     <p v-if="message" class="muted">{{ message }}</p>
     <p v-if="error" class="error">{{ error }}</p>
+
+    <div v-if="previewFile" class="modal-backdrop" @click.self="closePreview">
+      <section class="card modal-card preview-modal">
+        <div class="modal-head">
+          <div>
+            <h3>{{ previewFile.metadata?.fileName || previewFile.name }}</h3>
+            <p class="muted">{{ previewFile.name }}</p>
+          </div>
+          <div class="form-actions">
+            <a class="btn btn-ghost" :href="fileLink(previewFile.name)" target="_blank" rel="noopener">直链</a>
+            <button class="btn btn-ghost" type="button" @click="closePreview">关闭</button>
+          </div>
+        </div>
+
+        <div class="preview-modal-body">
+          <img
+            v-if="isImage(previewFile.metadata?.fileName || previewFile.name)"
+            class="preview-modal-image"
+            :src="fileLink(previewFile.name)"
+            :alt="previewFile.metadata?.fileName || previewFile.name"
+          />
+          <video
+            v-else-if="isVideo(previewFile.metadata?.fileName || previewFile.name)"
+            class="preview-modal-video"
+            :src="fileLink(previewFile.name)"
+            controls
+          ></video>
+          <audio
+            v-else-if="isAudio(previewFile.metadata?.fileName || previewFile.name)"
+            class="preview-modal-audio"
+            :src="fileLink(previewFile.name)"
+            controls
+          ></audio>
+          <iframe
+            v-else-if="isPdf(previewFile.metadata?.fileName || previewFile.name)"
+            class="preview-modal-frame"
+            :src="fileLink(previewFile.name)"
+            title="文件预览"
+          ></iframe>
+          <div v-else class="preview-modal-empty">
+            <p class="muted">当前文件类型不支持页内预览。</p>
+            <a class="btn" :href="fileLink(previewFile.name)" target="_blank" rel="noopener">打开文件</a>
+          </div>
+        </div>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -257,6 +307,7 @@ const viewMode = ref('list');
 const selectedFileIds = ref([]);
 const message = ref('');
 const error = ref('');
+const previewFile = ref(null);
 
 const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024;
 const SMALL_FILE_THRESHOLD = 20 * 1024 * 1024;
@@ -915,6 +966,14 @@ function fileLink(id) {
   return absoluteFileUrl(id);
 }
 
+function openPreview(file) {
+  previewFile.value = file;
+}
+
+function closePreview() {
+  previewFile.value = null;
+}
+
 async function copyDirect(file) {
   await copyText(fileLink(file.name));
   message.value = '直链已复制。';
@@ -947,6 +1006,21 @@ async function copyText(text) {
 function isImage(name = '') {
   const ext = String(name).split('.').pop()?.toLowerCase() || '';
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif', 'heic'].includes(ext);
+}
+
+function isVideo(name = '') {
+  const ext = String(name).split('.').pop()?.toLowerCase() || '';
+  return ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'].includes(ext);
+}
+
+function isAudio(name = '') {
+  const ext = String(name).split('.').pop()?.toLowerCase() || '';
+  return ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus'].includes(ext);
+}
+
+function isPdf(name = '') {
+  const ext = String(name).split('.').pop()?.toLowerCase() || '';
+  return ext === 'pdf';
 }
 
 function formatSize(bytes = 0) {

@@ -840,6 +840,26 @@ textarea {
   word-break: break-all;
 }
 
+.file-name-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.file-name-button:hover {
+  color: var(--accent);
+}
+
+.file-name-inline {
+  display: inline-block;
+}
+
 .file-actions {
   display: flex;
   flex-wrap: wrap;
@@ -863,6 +883,41 @@ textarea {
   padding: 18px;
   display: grid;
   gap: 14px;
+}
+
+.preview-modal {
+  width: min(980px, 100%);
+}
+
+.preview-modal-body {
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.preview-modal-image,
+.preview-modal-video,
+.preview-modal-frame {
+  width: 100%;
+  height: min(72vh, 760px);
+  object-fit: contain;
+  border: 0;
+  background: #0f172a;
+}
+
+.preview-modal-audio {
+  width: min(720px, calc(100% - 40px));
+}
+
+.preview-modal-empty {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  padding: 24px;
 }
 
 .modal-head {
@@ -918,6 +973,20 @@ textarea {
   display: flex !important;
   align-items: center;
   gap: 8px;
+}
+
+.file-table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  min-width: max-content;
+}
+
+.file-table-actions .btn {
+  white-space: nowrap;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .token-scope-list {
