@@ -45,7 +45,7 @@
           <input v-model.trim="form.restrictions.folderPath" placeholder="例如 media/videos" />
         </label>
         <div class="form-actions">
-          <button class="btn" :disabled="saving">
+          <button class="btn" type="submit" :disabled="saving">
             {{ saving ? (editingId ? '保存中...' : '创建中...') : (editingId ? '保存 Token' : '创建 Token') }}
           </button>
           <button v-if="editingId" class="btn btn-ghost" type="button" :disabled="saving" @click="resetForm">
@@ -56,10 +56,12 @@
 
       <div v-if="latestToken" class="test-detail ok">
         <strong>新 Token 已创建</strong>
-        <pre>{{ latestToken }}</pre>
+        <input :value="latestToken" readonly class="token-display-input" @focus="$event.target.select()" />
         <div class="form-actions">
-          <button class="btn btn-ghost" @click="copy(latestToken)">复制 Token</button>
+          <button class="btn btn-ghost" type="button" @click="copy(latestToken, 'Token 已复制。')">复制 Token</button>
+          <button class="btn btn-ghost" type="button" @click="copy(uploadExample, '上传命令已复制。')">复制命令</button>
         </div>
+        <p class="muted">明文 Token 只会在创建时展示一次，刷新页面后无法再恢复。</p>
         <pre>{{ uploadExample }}</pre>
       </div>
     </section>
@@ -100,11 +102,11 @@
               <td>{{ token.tokenPreview }}</td>
               <td>
                 <div class="form-actions">
-                  <button class="btn btn-ghost" @click="editToken(token)">编辑</button>
-                  <button class="btn btn-ghost" @click="toggleToken(token)">
+                  <button class="btn btn-ghost" type="button" @click="editToken(token)">编辑</button>
+                  <button class="btn btn-ghost" type="button" @click="toggleToken(token)">
                     {{ token.enabled ? '禁用' : '启用' }}
                   </button>
-                  <button class="btn btn-danger" @click="removeToken(token.id)">删除</button>
+                  <button class="btn btn-danger" type="button" @click="removeToken(token.id)">删除</button>
                 </div>
               </td>
             </tr>
@@ -264,16 +266,22 @@ async function removeToken(id) {
   }
 }
 
-async function copy(text) {
+async function copy(text, successMessage = '已复制。') {
   try {
     await navigator.clipboard.writeText(text);
+    message.value = successMessage;
   } catch {
     const input = document.createElement('textarea');
     input.value = text;
     document.body.appendChild(input);
     input.select();
-    document.execCommand('copy');
+    const copied = document.execCommand('copy');
     document.body.removeChild(input);
+    if (copied) {
+      message.value = successMessage;
+      return;
+    }
+    window.prompt('请手动复制下面的内容：', text);
   }
 }
 
