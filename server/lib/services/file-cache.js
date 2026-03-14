@@ -92,11 +92,13 @@ class FileCacheService {
   async getStatus() {
     let currentBytes = 0;
     let currentFiles = 0;
+    let freeBytes = Number.POSITIVE_INFINITY;
 
     if (this.config.enabled) {
       const entries = await this.scanEntries();
       currentFiles = entries.length;
       currentBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+      freeBytes = this.getFreeBytes();
     }
 
     const hitRate = this.metrics.requests > 0
@@ -113,6 +115,7 @@ class FileCacheService {
       maxFileBytes: this.config.maxFileBytes,
       currentBytes,
       currentFiles,
+      freeBytes,
       warming: this.warmupPromises.size,
       metrics: {
         ...this.metrics,

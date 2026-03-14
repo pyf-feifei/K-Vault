@@ -52,8 +52,13 @@
         <li><strong>单文件上限：</strong> {{ formatBytes(fileCache.maxFileBytes) }}</li>
         <li><strong>过期时间：</strong> {{ formatHours(fileCache.ttlMs) }}</li>
         <li><strong>磁盘保底空闲：</strong> {{ formatBytes(fileCache.minFreeBytes) }}</li>
+        <li><strong>当前磁盘空闲：</strong> {{ formatBytes(fileCache.freeBytes) }}</li>
         <li><strong>预热任务：</strong> {{ fileCache.warming || 0 }}</li>
       </ul>
+      <div class="cache-summary">
+        <p class="muted">{{ estimateMediaSummary(100) }}</p>
+        <p class="muted">{{ estimateMediaSummary(300) }}</p>
+      </div>
       <div class="cache-metrics" v-if="fileCache.metrics">
         <div class="cache-metric">
           <span>命中</span>
@@ -187,5 +192,21 @@ function formatPercent(value = 0) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric)) return '0.0%';
   return `${(numeric * 100).toFixed(1)}%`;
+}
+
+function estimateMediaSummary(sizeMb) {
+  const cache = fileCache.value;
+  if (!cache?.enabled) {
+    return `${sizeMb}MB 视频：缓存未启用。`;
+  }
+
+  const bytes = sizeMb * 1024 * 1024;
+  if (Number(cache.maxFileBytes || 0) < bytes) {
+    return `${sizeMb}MB 视频：不会进入缓存，因为单文件上限只有 ${formatBytes(cache.maxFileBytes)}。`;
+  }
+
+  const remainingBytes = Math.max(0, Number(cache.maxBytes || 0) - Number(cache.currentBytes || 0));
+  const count = Math.floor(remainingBytes / bytes);
+  return `${sizeMb}MB 视频：会进入缓存；按当前缓存池剩余空间，约还能容纳 ${count} 个。`;
 }
 </script>

@@ -860,6 +860,11 @@ textarea {
   gap: 8px;
 }
 
+.cache-summary {
+  display: grid;
+  gap: 4px;
+}
+
 .cache-metric {
   border: 1px solid var(--line);
   border-radius: 10px;
