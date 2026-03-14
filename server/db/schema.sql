@@ -55,6 +55,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  scopes_json TEXT NOT NULL DEFAULT '[]',
+  expires_at INTEGER,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  token_salt TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
+  token_suffix TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_tokens_enabled ON api_tokens(enabled);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_expires_at ON api_tokens(expires_at);
+
 CREATE TABLE IF NOT EXISTS guest_upload_counters (
   id TEXT PRIMARY KEY,
   ip TEXT NOT NULL,

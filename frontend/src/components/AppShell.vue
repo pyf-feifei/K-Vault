@@ -13,6 +13,7 @@
         <router-link class="nav-link" to="/drive">文件库</router-link>
         <router-link class="nav-link" to="/storage">存储配置</router-link>
         <router-link class="nav-link" to="/cache">缓存</router-link>
+        <router-link class="nav-link" to="/tokens">API Tokens</router-link>
         <router-link class="nav-link" to="/status">状态</router-link>
         <a class="nav-link" href="/legacy/index.html" target="_blank" rel="noopener">旧版</a>
       </nav>

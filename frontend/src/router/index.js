@@ -7,6 +7,7 @@ import DriveView from '../views/DriveView.vue';
 import StorageView from '../views/StorageView.vue';
 import StatusView from '../views/StatusView.vue';
 import CacheView from '../views/CacheView.vue';
+import ApiTokensView from '../views/ApiTokensView.vue';
 
 const routes = [
   {
@@ -24,6 +25,7 @@ const routes = [
       { path: 'admin', redirect: '/drive' },
       { path: 'storage', name: 'storage', component: StorageView, meta: { requiresAdmin: true } },
       { path: 'cache', name: 'cache', component: CacheView, meta: { requiresAdmin: true } },
+      { path: 'tokens', name: 'tokens', component: ApiTokensView, meta: { requiresAdmin: true } },
       { path: 'status', name: 'status', component: StatusView },
     ],
   },

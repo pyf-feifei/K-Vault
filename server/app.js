@@ -168,6 +168,27 @@ async function createApp() {
     return output;
   }
 
+  function extractBearerToken(c) {
+    const authorization = String(c.req.header('authorization') || '').trim();
+    const match = /^Bearer\s+(.+)$/i.exec(authorization);
+    return match ? String(match[1] || '').trim() : '';
+  }
+
+  function normalizeTokenExpiryInput(body = {}) {
+    if (Object.prototype.hasOwnProperty.call(body, 'expiresAt')) {
+      return body.expiresAt;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'expiresInDays')) {
+      const days = parseBoundedInt(body.expiresInDays, 0, 1, 3650);
+      return days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : null;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'expiresInSeconds')) {
+      const seconds = parseBoundedInt(body.expiresInSeconds, 0, 1, 3650 * 24 * 60 * 60);
+      return seconds > 0 ? Date.now() + seconds * 1000 : null;
+    }
+    return null;
+  }
+
   function applyRuntimeSettings(container, settings = {}) {
     if (!container) return;
 
@@ -590,6 +611,82 @@ async function createApp() {
   // Compatibility aliases
   app.get('/api/manage/settings', getSettingsHandler);
   app.post('/api/manage/settings', setSettingsHandler);
+
+  // --- API tokens ---
+  app.get('/api/tokens', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { apiTokenRepo } = getServices(c);
+    return c.json({
+      success: true,
+      tokens: apiTokenRepo.list(),
+      scopes: apiTokenRepo.getScopes(),
+    });
+  });
+
+  app.post('/api/tokens', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { apiTokenRepo } = getServices(c);
+    const body = await c.req.json().catch(() => ({}));
+
+    try {
+      const created = apiTokenRepo.create({
+        name: body.name,
+        scopes: body.scopes,
+        expiresAt: normalizeTokenExpiryInput(body),
+        enabled: body.enabled !== false,
+      });
+
+      return c.json({
+        success: true,
+        token: created.token,
+        tokenInfo: created.tokenInfo,
+        scopes: apiTokenRepo.getScopes(),
+      }, 201);
+    } catch (error) {
+      return jsonError(c, 400, 'TOKEN_CREATE_FAILED', 'Failed to create API Token.', error?.message || 'Token creation failed.');
+    }
+  });
+
+  app.patch('/api/tokens/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { apiTokenRepo } = getServices(c);
+    const id = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const patch = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'name')) patch.name = body.name;
+    if (Object.prototype.hasOwnProperty.call(body, 'scopes')) patch.scopes = body.scopes;
+    if (Object.prototype.hasOwnProperty.call(body, 'expiresAt')) patch.expiresAt = body.expiresAt;
+    if (Object.prototype.hasOwnProperty.call(body, 'enabled')) patch.enabled = body.enabled;
+
+    try {
+      const updated = apiTokenRepo.update(id, patch);
+      if (!updated) {
+        return jsonError(c, 404, 'TOKEN_NOT_FOUND', 'API Token not found.', `API Token "${id}" does not exist.`);
+      }
+      return c.json({ success: true, tokenInfo: updated });
+    } catch (error) {
+      return jsonError(c, 400, 'TOKEN_UPDATE_FAILED', 'Failed to update API Token.', error?.message || 'Token update failed.');
+    }
+  });
+
+  app.delete('/api/tokens/:id', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { apiTokenRepo } = getServices(c);
+    const id = c.req.param('id');
+    const deleted = apiTokenRepo.delete(id);
+    if (!deleted) {
+      return jsonError(c, 404, 'TOKEN_NOT_FOUND', 'API Token not found.', `API Token "${id}" does not exist.`);
+    }
+    return c.json({ success: true });
+  });
 
   app.get('/api/ui-config', async (c) => {
     const config = await readUiConfig();
@@ -1030,6 +1127,60 @@ async function createApp() {
     }
 
     return uploadSuccessResponse(c, result);
+  });
+
+  app.post('/api/v1/upload', async (c) => {
+    const { apiTokenRepo, uploadService } = getServices(c);
+    const tokenValue = extractBearerToken(c);
+    const verification = apiTokenRepo.verify(tokenValue, 'upload');
+
+    if (!verification.ok) {
+      return jsonError(c, verification.status || 401, verification.code || 'TOKEN_INVALID', verification.message || 'API Token is invalid.', verification.message || 'Authorization failed.');
+    }
+
+    apiTokenRepo.touch(verification.raw.id);
+
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File)) {
+      return jsonError(c, 400, 'NO_FILE', 'No file uploaded.', 'Multipart body missing "file".');
+    }
+
+    const fileBuffer = await file.arrayBuffer();
+
+    let result;
+    try {
+      result = await uploadService.uploadFile({
+        fileName: file.name,
+        mimeType: file.type,
+        fileSize: fileBuffer.byteLength,
+        buffer: fileBuffer,
+        storageMode: asString(body.storageMode || body.storage),
+        storageId: asString(body.storageId || body.storage_config_id),
+        folderPath: normalizeFolderPath(body.folderPath || body.folder || ''),
+      });
+    } catch (error) {
+      const normalized = normalizeUploadError(c, error, 502);
+      return c.json({ ...normalized, traceId: getTraceId(c) }, 502);
+    }
+
+    const downloadPath = `/file/${encodeURIComponent(result.file.id)}`;
+    return c.json({
+      success: true,
+      file: {
+        id: result.file.id,
+        name: result.file.file_name,
+        size: result.file.file_size,
+        mimeType: result.file.mime_type || 'application/octet-stream',
+        folderPath: result.file.metadata?.folderPath || '',
+      },
+      storage: result.storage,
+      links: {
+        download: toAbsoluteUrl(c, downloadPath),
+        directPath: downloadPath,
+      },
+      traceId: getTraceId(c),
+    });
   });
 
   app.post('/api/upload-from-url', async (c) => {

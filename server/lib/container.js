@@ -4,6 +4,7 @@ const { AuthService } = require('./utils/auth');
 const { GuestService } = require('./utils/guest');
 const { StorageFactory } = require('./storage/factory');
 const { StorageConfigRepository } = require('./repos/storage-config-repo');
+const { ApiTokenRepository } = require('./repos/api-token-repo');
 const { FileRepository } = require('./repos/file-repo');
 const { UploadService } = require('./services/upload-service');
 const { ChunkUploadService } = require('./services/chunk-service');
@@ -34,6 +35,7 @@ async function createContainer(env = process.env) {
 
   const fileRepo = new FileRepository(db);
   const storageRepo = new StorageConfigRepository(db, config);
+  const apiTokenRepo = new ApiTokenRepository(db);
   const settingsStore = createSettingsStore({ db, config });
   const fileCache = new FileCacheService(config.fileCache);
   const initialSettings = await settingsStore.getMany(['fileCache']).catch(() => ({}));
@@ -50,6 +52,7 @@ async function createContainer(env = process.env) {
 
   const uploadService = new UploadService({
     storageRepo,
+    apiTokenRepo,
     fileRepo,
     storageFactory,
     fileCache,
@@ -69,6 +72,7 @@ async function createContainer(env = process.env) {
     authService,
     guestService,
     storageRepo,
+    apiTokenRepo,
     fileRepo,
     storageFactory,
     fileCache,
