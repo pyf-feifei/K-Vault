@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS api_tokens (
   name TEXT NOT NULL,
   scopes_json TEXT NOT NULL DEFAULT '[]',
   restrictions_json TEXT NOT NULL DEFAULT '{}',
+  encrypted_secret_json TEXT NOT NULL DEFAULT '',
   expires_at INTEGER,
   enabled INTEGER NOT NULL DEFAULT 1,
   token_salt TEXT NOT NULL,

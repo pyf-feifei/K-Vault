@@ -690,6 +690,27 @@ async function createApp() {
     return c.json({ success: true });
   });
 
+  app.post('/api/tokens/:id/reveal', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { apiTokenRepo } = getServices(c);
+    const id = c.req.param('id');
+    const revealed = apiTokenRepo.reveal(id);
+    if (!revealed) {
+      return jsonError(c, 404, 'TOKEN_NOT_FOUND', 'API Token not found.', `API Token "${id}" does not exist.`);
+    }
+    if (!revealed.recoverable) {
+      return jsonError(c, 409, 'TOKEN_SECRET_UNAVAILABLE', 'Token secret cannot be recovered.', 'This token was created before secret retention was enabled. Rotate it to get a new copyable token.');
+    }
+
+    return c.json({
+      success: true,
+      token: revealed.token,
+      tokenInfo: revealed.tokenInfo,
+    });
+  });
+
   app.post('/api/tokens/:id/rotate', async (c) => {
     const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;

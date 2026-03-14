@@ -30,6 +30,12 @@ export async function deleteApiToken(id) {
   });
 }
 
+export async function revealApiToken(id) {
+  return apiFetch(`/api/tokens/${encodeURIComponent(id)}/reveal`, {
+    method: 'POST',
+  });
+}
+
 export async function rotateApiToken(id) {
   return apiFetch(`/api/tokens/${encodeURIComponent(id)}/rotate`, {
     method: 'POST',

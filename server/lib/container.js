@@ -35,7 +35,7 @@ async function createContainer(env = process.env) {
 
   const fileRepo = new FileRepository(db);
   const storageRepo = new StorageConfigRepository(db, config);
-  const apiTokenRepo = new ApiTokenRepository(db);
+  const apiTokenRepo = new ApiTokenRepository(db, config);
   const settingsStore = createSettingsStore({ db, config });
   const fileCache = new FileCacheService(config.fileCache);
   const initialSettings = await settingsStore.getMany(['fileCache']).catch(() => ({}));

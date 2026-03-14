@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { all, get, run } = require('../../db');
 const { normalizeFolderPath } = require('./file-repo');
+const { encryptJson, decryptJson } = require('../utils/crypto');
 
 const TOKEN_PREFIX = 'kvault_';
 const VALID_SCOPES = ['upload', 'read', 'delete'];
@@ -85,8 +86,9 @@ function normalizeRestrictions(rawValue = {}) {
 }
 
 class ApiTokenRepository {
-  constructor(db) {
+  constructor(db, appConfig) {
     this.db = db;
+    this.appConfig = appConfig;
     this.ensureSchema();
   }
 
@@ -98,6 +100,7 @@ class ApiTokenRepository {
         name TEXT NOT NULL,
         scopes_json TEXT NOT NULL DEFAULT '[]',
         restrictions_json TEXT NOT NULL DEFAULT '{}',
+        encrypted_secret_json TEXT NOT NULL DEFAULT '',
         expires_at INTEGER,
         enabled INTEGER NOT NULL DEFAULT 1,
         token_salt TEXT NOT NULL,
@@ -111,6 +114,10 @@ class ApiTokenRepository {
     const hasRestrictions = columns.some((column) => column.name === 'restrictions_json');
     if (!hasRestrictions) {
       run(this.db, `ALTER TABLE api_tokens ADD COLUMN restrictions_json TEXT NOT NULL DEFAULT '{}'`);
+    }
+    const hasEncryptedSecret = columns.some((column) => column.name === 'encrypted_secret_json');
+    if (!hasEncryptedSecret) {
+      run(this.db, `ALTER TABLE api_tokens ADD COLUMN encrypted_secret_json TEXT NOT NULL DEFAULT ''`);
     }
     run(this.db, 'CREATE INDEX IF NOT EXISTS idx_api_tokens_enabled ON api_tokens(enabled)');
     run(this.db, 'CREATE INDEX IF NOT EXISTS idx_api_tokens_expires_at ON api_tokens(expires_at)');
@@ -130,6 +137,18 @@ class ApiTokenRepository {
     if (!tokenId) return null;
     const row = get(this.db, 'SELECT * FROM api_tokens WHERE id = ?', [tokenId]);
     return row || null;
+  }
+
+  encryptSecret(secret) {
+    return JSON.stringify(encryptJson({ secret }, this.appConfig.configEncryptionKey));
+  }
+
+  decryptSecret(row) {
+    const blobText = String(row?.encrypted_secret_json || '').trim();
+    if (!blobText) return '';
+    const blob = JSON.parse(blobText);
+    const decrypted = decryptJson(blob, this.appConfig.configEncryptionKey);
+    return String(decrypted?.secret || '');
   }
 
   create({ name, scopes, restrictions, expiresAt, enabled = true }) {
@@ -154,13 +173,14 @@ class ApiTokenRepository {
     run(
       this.db,
       `INSERT INTO api_tokens(
-        id, name, scopes_json, restrictions_json, expires_at, enabled, token_salt, token_hash, token_suffix, created_at, last_used_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, name, scopes_json, restrictions_json, encrypted_secret_json, expires_at, enabled, token_salt, token_hash, token_suffix, created_at, last_used_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tokenId,
         normalizedName,
         JSON.stringify(normalizedScopes),
         JSON.stringify(normalizedRestrictions),
+        this.encryptSecret(tokenSecret),
         normalizeExpiresAt(expiresAt),
         enabled !== false ? 1 : 0,
         tokenSalt,
@@ -189,14 +209,32 @@ class ApiTokenRepository {
     run(
       this.db,
       `UPDATE api_tokens
-       SET token_salt = ?, token_hash = ?, token_suffix = ?
+       SET token_salt = ?, token_hash = ?, token_suffix = ?, encrypted_secret_json = ?
        WHERE id = ?`,
-      [tokenSalt, tokenHash, tokenSuffix, current.id]
+      [tokenSalt, tokenHash, tokenSuffix, this.encryptSecret(tokenSecret), current.id]
     );
 
     return {
       token: `${TOKEN_PREFIX}${current.id}_${tokenSecret}`,
       tokenInfo: toPublicToken(this.getById(id)),
+    };
+  }
+
+  reveal(id) {
+    const current = this.getById(id);
+    if (!current) return null;
+    const secret = this.decryptSecret(current);
+    if (!secret) {
+      return {
+        recoverable: false,
+        token: '',
+        tokenInfo: toPublicToken(current),
+      };
+    }
+    return {
+      recoverable: true,
+      token: `${TOKEN_PREFIX}${current.id}_${secret}`,
+      tokenInfo: toPublicToken(current),
     };
   }
 

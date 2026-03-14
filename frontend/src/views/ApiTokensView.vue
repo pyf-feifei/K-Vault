@@ -103,6 +103,7 @@
               <td>
                 <div class="form-actions">
                   <button class="btn btn-ghost" type="button" @click="copyTokenForRow(token)">复制 Token</button>
+                  <button class="btn btn-ghost" type="button" @click="rotateTokenForRow(token)">重新生成</button>
                   <button class="btn btn-ghost" type="button" @click="editToken(token)">编辑</button>
                   <button class="btn btn-ghost" type="button" @click="toggleToken(token)">
                     {{ token.enabled ? '禁用' : '启用' }}
@@ -126,7 +127,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
-import { createApiToken, deleteApiToken, listApiTokens, rotateApiToken, updateApiToken } from '../api/tokens';
+import { createApiToken, deleteApiToken, listApiTokens, revealApiToken, rotateApiToken, updateApiToken } from '../api/tokens';
 import { getApiBase } from '../api/client';
 import { listStorageConfigs } from '../api/storage';
 
@@ -293,7 +294,30 @@ async function copyTokenForRow(token) {
     return;
   }
 
-  const confirmed = window.confirm('这个 Token 的明文已不可恢复。是否立即重新生成并复制？旧 Token 会立刻失效。');
+  try {
+    const revealed = await revealApiToken(token.id);
+    const nextToken = revealed.token || '';
+    if (!nextToken) {
+      throw new Error('未返回 Token 明文。');
+    }
+    tokenSecrets.value = {
+      ...tokenSecrets.value,
+      [token.id]: nextToken,
+    };
+    latestToken.value = nextToken;
+    latestTokenId.value = token.id;
+    latestTokenReason.value = 'Token 已读取';
+    await copy(nextToken, 'Token 已复制。');
+  } catch (err) {
+    error.value = err.message || '读取 Token 失败';
+  }
+}
+
+async function rotateTokenForRow(token) {
+  error.value = '';
+  message.value = '';
+
+  const confirmed = window.confirm('是否重新生成这个 Token？旧 Token 会立刻失效。');
   if (!confirmed) return;
 
   try {
@@ -310,7 +334,6 @@ async function copyTokenForRow(token) {
     latestToken.value = nextToken;
     latestTokenId.value = token.id;
     latestTokenReason.value = 'Token 已重新生成';
-    await copy(nextToken, '新 Token 已复制。');
     message.value = 'API Token 已重新生成。旧 Token 已失效。';
     await loadTokens();
   } catch (err) {
