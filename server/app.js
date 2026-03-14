@@ -168,6 +168,14 @@ async function createApp() {
     return output;
   }
 
+  function applyRuntimeSettings(container, settings = {}) {
+    if (!container) return;
+
+    if (Object.prototype.hasOwnProperty.call(settings, 'fileCache')) {
+      container.fileCache?.setOverride(settings.fileCache);
+    }
+  }
+
   const UI_CONFIG_FILE_NAME = 'ui_config.json';
   const UI_EFFECT_STYLES = new Set(['none', 'math', 'particle', 'texture']);
   const DEFAULT_UI_CONFIG = {
@@ -510,7 +518,8 @@ async function createApp() {
     const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
-    const { settingsStore } = getServices(c);
+    const services = getServices(c);
+    const { settingsStore } = services;
     const body = await c.req.json().catch(() => ({}));
     const source = body.settings != null ? body.settings : body;
     const settings = sanitizeSettingEntries(source);
@@ -520,9 +529,13 @@ async function createApp() {
 
     if (Object.keys(settings).length > 0) {
       await settingsStore.setMany(settings);
+      applyRuntimeSettings(services, settings);
     }
     if (removeKeys.length > 0) {
       await settingsStore.deleteMany(removeKeys);
+      if (removeKeys.includes('fileCache')) {
+        services.fileCache?.setOverride(null);
+      }
     }
 
     return c.json({
@@ -535,7 +548,8 @@ async function createApp() {
     const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
-    const { settingsStore } = getServices(c);
+    const services = getServices(c);
+    const { settingsStore } = services;
     const queryKeys = getSettingsKeyList(c);
     let payloadKeys = [];
 
@@ -558,6 +572,9 @@ async function createApp() {
     }
 
     await settingsStore.deleteMany(keys);
+    if (keys.includes('fileCache')) {
+      services.fileCache?.setOverride(null);
+    }
 
     return c.json({
       success: true,

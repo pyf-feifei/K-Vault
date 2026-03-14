@@ -865,6 +865,24 @@ textarea {
   gap: 4px;
 }
 
+.cache-settings-form {
+  display: grid;
+  gap: 10px;
+}
+
+.cache-settings-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.cache-settings-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
 .cache-metric {
   border: 1px solid var(--line);
   border-radius: 10px;

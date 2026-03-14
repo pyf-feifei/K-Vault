@@ -5,6 +5,37 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
+function toBool(value, defaultValue = false) {
+  if (value == null || value === '') return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function toBytes(value, fallback) {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+  const normalized = String(value).trim().toUpperCase();
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?$/);
+  if (!match) return fallback;
+
+  const amount = Number.parseFloat(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return fallback;
+
+  const unit = match[2] || 'B';
+  const multipliers = {
+    B: 1,
+    KB: 1024,
+    MB: 1024 * 1024,
+    GB: 1024 * 1024 * 1024,
+    TB: 1024 * 1024 * 1024 * 1024,
+  };
+
+  return Math.round(amount * (multipliers[unit] || 1));
+}
+
 function normalizePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -51,7 +82,7 @@ function parseRange(rangeHeader, size) {
 
 class FileCacheService {
   constructor(config = {}) {
-    this.config = {
+    this.baseConfig = this.normalizeConfig({
       enabled: config.enabled !== false,
       dir: path.resolve(config.dir || path.join(process.cwd(), 'data', 'file-cache')),
       ttlMs: Math.max(60 * 60 * 1000, Number(config.ttlMs || 7 * 24 * 60 * 60 * 1000)),
@@ -59,7 +90,9 @@ class FileCacheService {
       maxFiles: Math.max(100, Number(config.maxFiles || 5000)),
       minFreeBytes: Math.max(256 * 1024 * 1024, Number(config.minFreeBytes || 2 * 1024 * 1024 * 1024)),
       maxFileBytes: Math.max(1 * 1024 * 1024, Number(config.maxFileBytes || 256 * 1024 * 1024)),
-    };
+    });
+    this.config = { ...this.baseConfig };
+    this.overrideConfig = null;
     this.cleanupPromise = null;
     this.lastCleanupAt = 0;
     this.cleanupIntervalMs = 60 * 1000;
@@ -76,6 +109,49 @@ class FileCacheService {
     if (this.config.enabled) {
       fs.mkdirSync(this.config.dir, { recursive: true });
     }
+  }
+
+  normalizeConfig(input = {}, fallback = this.baseConfig || {}) {
+    const ttlMs = input.ttlMs != null
+      ? Number(input.ttlMs)
+      : input.ttlHours != null
+        ? normalizePositiveInt(input.ttlHours, Math.round((fallback.ttlMs || 0) / (60 * 60 * 1000))) * 60 * 60 * 1000
+        : fallback.ttlMs;
+
+    return {
+      enabled: toBool(input.enabled, fallback.enabled !== false),
+      dir: input.dir ? path.resolve(input.dir) : fallback.dir,
+      ttlMs: Math.max(60 * 60 * 1000, Number.isFinite(ttlMs) ? ttlMs : fallback.ttlMs),
+      maxBytes: Math.max(256 * 1024 * 1024, toBytes(input.maxBytes, fallback.maxBytes)),
+      maxFiles: Math.max(100, normalizePositiveInt(input.maxFiles, fallback.maxFiles)),
+      minFreeBytes: Math.max(256 * 1024 * 1024, toBytes(input.minFreeBytes, fallback.minFreeBytes)),
+      maxFileBytes: Math.max(1 * 1024 * 1024, toBytes(input.maxFileBytes, fallback.maxFileBytes)),
+    };
+  }
+
+  setOverride(config = null) {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      this.overrideConfig = null;
+      this.config = { ...this.baseConfig };
+    } else {
+      this.overrideConfig = { ...config };
+      this.config = this.normalizeConfig(config, this.baseConfig);
+    }
+
+    if (this.config.enabled) {
+      fs.mkdirSync(this.config.dir, { recursive: true });
+    }
+  }
+
+  getEditableSettings() {
+    return {
+      enabled: this.config.enabled,
+      ttlHours: Math.round(this.config.ttlMs / (60 * 60 * 1000)),
+      maxBytes: this.config.maxBytes,
+      maxFiles: this.config.maxFiles,
+      minFreeBytes: this.config.minFreeBytes,
+      maxFileBytes: this.config.maxFileBytes,
+    };
   }
 
   recordAccess(status) {
@@ -107,6 +183,7 @@ class FileCacheService {
 
     return {
       enabled: this.config.enabled,
+      overrideActive: Boolean(this.overrideConfig),
       dir: this.config.dir,
       ttlMs: this.config.ttlMs,
       maxBytes: this.config.maxBytes,
@@ -117,6 +194,7 @@ class FileCacheService {
       currentFiles,
       freeBytes,
       warming: this.warmupPromises.size,
+      editable: this.getEditableSettings(),
       metrics: {
         ...this.metrics,
         hitRate,

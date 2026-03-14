@@ -36,6 +36,10 @@ async function createContainer(env = process.env) {
   const storageRepo = new StorageConfigRepository(db, config);
   const settingsStore = createSettingsStore({ db, config });
   const fileCache = new FileCacheService(config.fileCache);
+  const initialSettings = await settingsStore.getMany(['fileCache']).catch(() => ({}));
+  if (initialSettings.fileCache && typeof initialSettings.fileCache === 'object') {
+    fileCache.setOverride(initialSettings.fileCache);
+  }
   const authService = new AuthService(db, config);
   const guestService = new GuestService(db, config);
 
