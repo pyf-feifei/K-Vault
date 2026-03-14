@@ -58,11 +58,13 @@ function hashSecret(secret, salt) {
 
 function toPublicToken(row) {
   if (!row) return null;
+  const encryptedSecret = String(row.encrypted_secret_json || '').trim();
   return {
     id: row.id,
     name: row.name,
     scopes: JSON.parse(row.scopes_json || '[]'),
     restrictions: JSON.parse(row.restrictions_json || '{}'),
+    recoverable: Boolean(encryptedSecret),
     expiresAt: row.expires_at == null ? null : Number(row.expires_at),
     enabled: Boolean(row.enabled),
     createdAt: Number(row.created_at || 0),

@@ -99,11 +99,38 @@
               </td>
               <td>{{ formatDateTime(token.lastUsedAt) }}</td>
               <td>{{ formatRestrictions(token.restrictions) }}</td>
-              <td>{{ token.tokenPreview }}</td>
+              <td>
+                <div class="file-col">
+                  <strong>{{ token.tokenPreview }}</strong>
+                  <small v-if="!token.recoverable">旧 Token，原文不可恢复</small>
+                </div>
+              </td>
               <td>
                 <div class="form-actions">
-                  <button class="btn btn-ghost" type="button" @click="copyTokenForRow(token)">复制 Token</button>
-                  <button class="btn btn-ghost" type="button" @click="rotateTokenForRow(token)">重新生成</button>
+                  <button
+                    v-if="token.recoverable"
+                    class="btn btn-ghost"
+                    type="button"
+                    @click="copyTokenForRow(token)"
+                  >
+                    复制 Token
+                  </button>
+                  <button
+                    v-else
+                    class="btn btn-ghost"
+                    type="button"
+                    @click="rotateTokenForRow(token)"
+                  >
+                    重新生成并复制
+                  </button>
+                  <button
+                    v-if="token.recoverable"
+                    class="btn btn-ghost"
+                    type="button"
+                    @click="rotateTokenForRow(token)"
+                  >
+                    重新生成
+                  </button>
                   <button class="btn btn-ghost" type="button" @click="editToken(token)">编辑</button>
                   <button class="btn btn-ghost" type="button" @click="toggleToken(token)">
                     {{ token.enabled ? '禁用' : '启用' }}
@@ -317,7 +344,9 @@ async function rotateTokenForRow(token) {
   error.value = '';
   message.value = '';
 
-  const confirmed = window.confirm('是否重新生成这个 Token？旧 Token 会立刻失效。');
+  const confirmed = window.confirm(token.recoverable
+    ? '是否重新生成这个 Token？旧 Token 会立刻失效。'
+    : '这个旧 Token 无法恢复原文。是否立即重新生成并复制新的 Token？旧 Token 会立刻失效。');
   if (!confirmed) return;
 
   try {
@@ -334,6 +363,9 @@ async function rotateTokenForRow(token) {
     latestToken.value = nextToken;
     latestTokenId.value = token.id;
     latestTokenReason.value = 'Token 已重新生成';
+    if (!token.recoverable) {
+      await copy(nextToken, '新 Token 已复制。');
+    }
     message.value = 'API Token 已重新生成。旧 Token 已失效。';
     await loadTokens();
   } catch (err) {
