@@ -1244,6 +1244,51 @@ async function createApp() {
     });
   });
 
+  app.delete('/api/v1/file/:id', async (c) => {
+    const { apiTokenRepo, uploadService, fileRepo } = getServices(c);
+    const tokenValue = extractBearerToken(c);
+    const verification = apiTokenRepo.verify(tokenValue, 'delete');
+
+    if (!verification.ok) {
+      return jsonError(c, verification.status || 401, verification.code || 'TOKEN_INVALID', verification.message || 'API Token is invalid.', verification.message || 'Authorization failed.');
+    }
+
+    apiTokenRepo.touch(verification.raw.id);
+
+    const id = decodeURIComponent(c.req.param('id'));
+    const file = fileRepo.getById(id);
+    if (!file) {
+      return jsonError(c, 404, 'FILE_NOT_FOUND', 'File not found.', `File "${id}" does not exist.`);
+    }
+
+    const restrictions = verification.token?.restrictions || {};
+    const fileFolderPath = normalizeFolderPath(file.metadata?.folderPath || '');
+
+    if (restrictions.storageConfigId && String(file.storage_config_id || '') !== restrictions.storageConfigId) {
+      return jsonError(c, 403, 'TOKEN_STORAGE_RESTRICTED', 'API Token is restricted to another storage config.', `Allowed storage config: ${restrictions.storageConfigId}`);
+    }
+
+    if (
+      restrictions.folderPath
+      && fileFolderPath
+      && fileFolderPath !== restrictions.folderPath
+      && !fileFolderPath.startsWith(`${restrictions.folderPath}/`)
+    ) {
+      return jsonError(c, 403, 'TOKEN_FOLDER_RESTRICTED', 'API Token is restricted to another folder path.', `Allowed folder path: ${restrictions.folderPath}`);
+    }
+
+    const result = await uploadService.deleteFile(id);
+    if (!result.deleted) {
+      return jsonError(c, 404, 'FILE_NOT_FOUND', 'File not found.', `File "${id}" does not exist.`);
+    }
+
+    return c.json({
+      success: true,
+      fileId: id,
+      traceId: getTraceId(c),
+    });
+  });
+
   app.post('/api/upload-from-url', async (c) => {
     const { authService, guestService, uploadService } = getServices(c);
     const auth = await authService.checkAuthentication(c.req.raw);

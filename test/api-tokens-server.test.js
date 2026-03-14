@@ -117,4 +117,74 @@ describe('API token management endpoints', function () {
       await app.container.close();
     }
   });
+
+  it('deletes a file through bearer token delete scope', async function () {
+    const app = await createApp();
+    const authHeader = `Basic ${Buffer.from('admin:admin').toString('base64')}`;
+
+    try {
+      const createResponse = await app.fetch(new Request('http://localhost/api/tokens', {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.kvault.v2+json',
+          'X-KVault-Client': 'app-v2',
+        },
+        body: JSON.stringify({
+          name: 'delete-token',
+          scopes: ['delete'],
+          enabled: true,
+        }),
+      }));
+      const created = JSON.parse(await createResponse.text());
+      const bearerToken = created.token;
+
+      const { storageRepo, fileRepo } = app.container;
+      const storage = await storageRepo.create({
+        name: 'hf-test',
+        type: 'huggingface',
+        enabled: true,
+        isDefault: true,
+        config: {
+          token: 'hf_fake',
+          repo: 'owner/repo',
+        },
+      });
+      fileRepo.create({
+        id: 'delete-me.txt',
+        storageConfigId: storage.id,
+        storageType: 'huggingface',
+        storageKey: 'uploads/delete-me.txt',
+        fileName: 'delete-me.txt',
+        fileSize: 12,
+        mimeType: 'text/plain',
+        folderPath: '',
+        extra: {},
+      });
+      const originalDeleteFile = app.container.uploadService.deleteFile.bind(app.container.uploadService);
+      app.container.uploadService.deleteFile = async (fileId) => {
+        fileRepo.delete(fileId);
+        return { deleted: true };
+      };
+
+      const deleteResponse = await app.fetch(new Request('http://localhost/api/v1/file/delete-me.txt', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          Accept: 'application/vnd.kvault.v2+json',
+          'X-KVault-Client': 'app-v2',
+        },
+      }));
+
+      const deleted = JSON.parse(await deleteResponse.text());
+      assert.strictEqual(deleteResponse.status, 200);
+      assert.strictEqual(deleted.success, true);
+      assert.strictEqual(deleted.fileId, 'delete-me.txt');
+      assert.strictEqual(fileRepo.getById('delete-me.txt'), null);
+      app.container.uploadService.deleteFile = originalDeleteFile;
+    } finally {
+      await app.container.close();
+    }
+  });
 });
