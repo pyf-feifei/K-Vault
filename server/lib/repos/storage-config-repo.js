@@ -107,7 +107,7 @@ class StorageConfigRepository {
       this.db,
       `SELECT * FROM storage_configs
        WHERE type = ? AND enabled = 1
-       ORDER BY is_default DESC, updated_at DESC`,
+       ORDER BY is_default DESC, created_at ASC, updated_at ASC`,
       [normalized]
     );
     return rows.map((row) => this.parseRow(row, true));

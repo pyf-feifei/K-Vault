@@ -49,7 +49,7 @@ function classifyStorageError(error, status) {
 
   if (
     byStatus([413, 507, 509]) ||
-    byMessage(/\bquota|insufficient storage|storage limit|file too large|payload too large\b/)
+    byMessage(/\bquota|insufficient storage|storage limit|file too large|payload too large|capacity threshold\b/)
   ) {
     return {
       code: 'QUOTA_EXCEEDED',

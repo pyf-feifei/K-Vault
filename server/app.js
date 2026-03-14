@@ -599,8 +599,39 @@ async function createApp() {
     const unauthorized = await requireAuth(c);
     if (unauthorized) return unauthorized;
 
-    const { storageRepo } = getServices(c);
-    return c.json({ success: true, items: await storageRepo.list(false) });
+    const { storageRepo, storageFactory } = getServices(c);
+    const secretItems = await storageRepo.list(true);
+    const items = await Promise.all(secretItems.map(async (item) => {
+      const publicItem = {
+        ...item,
+        config: storageRepo.maskSensitiveFields(item.type, item.config),
+      };
+
+      if (item.type !== 'huggingface') {
+        return publicItem;
+      }
+
+      try {
+        const adapter = storageFactory.createAdapter(item);
+        return {
+          ...publicItem,
+          runtime: {
+            capacity: await adapter.getCapacityInfo(),
+          },
+        };
+      } catch (error) {
+        return {
+          ...publicItem,
+          runtime: {
+            capacity: {
+              error: formatStatusDetail(error?.message || 'Failed to fetch capacity info'),
+            },
+          },
+        };
+      }
+    }));
+
+    return c.json({ success: true, items });
   });
 
   app.post('/api/storage', async (c) => {

@@ -9,11 +9,44 @@ class UploadService {
   }
 
   async resolveStorage({ storageId, storageMode }) {
+    if (!storageId && normalizeStorageType(storageMode) === 'huggingface') {
+      const huggingfaceStorage = await this.resolveHuggingFaceStorageByThreshold();
+      if (huggingfaceStorage) {
+        return huggingfaceStorage;
+      }
+    }
+
     const storageConfig = await this.storageRepo.resolveStorageSelection({ storageId, storageMode });
     if (!storageConfig) {
       throw new Error('No available storage configuration.');
     }
     return storageConfig;
+  }
+
+  async resolveHuggingFaceStorageByThreshold() {
+    const configs = await this.storageRepo.findEnabledByType('huggingface');
+    if (configs.length === 0) return null;
+
+    let hasCapacityError = false;
+    for (const config of configs) {
+      try {
+        const adapter = this.storageFactory.createAdapter(config);
+        const capacity = await adapter.getCapacityInfo();
+        if (capacity.withinThreshold) {
+          return config;
+        }
+      } catch (error) {
+        hasCapacityError = true;
+      }
+    }
+
+    if (hasCapacityError) {
+      return configs[0];
+    }
+
+    const error = new Error('All enabled HuggingFace storage configs exceeded their configured capacity thresholds.');
+    error.code = 'CAPACITY_THRESHOLD_EXCEEDED';
+    throw error;
   }
 
   async uploadFile({

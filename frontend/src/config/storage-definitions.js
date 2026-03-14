@@ -76,6 +76,13 @@ export const STORAGE_FIELDS = {
   huggingface: [
     { key: 'token', label: '访问 Token', required: true, secret: true, placeholder: 'hf_xxx' },
     { key: 'repo', label: '数据集仓库', required: true, placeholder: 'username/repo' },
+    {
+      key: 'capacityThresholdGb',
+      label: '参考容量阈值 (GB)',
+      input: 'number',
+      default: '100',
+      placeholder: '100',
+    },
   ],
   webdav: [
     { key: 'baseUrl', label: '基础地址', required: true, placeholder: 'https://dav.example.com/remote.php/dav/files/user' },
@@ -107,7 +114,7 @@ export const STORAGE_FIELDS = {
 export const STORAGE_NOTES = {
   telegram: '实际稳定上传上限建议控制在 50MB 以内。',
   discord: '适配器当前采用较保守的 25MB 上传限制。',
-  huggingface: '常规 commit 上传更适合小文件，适配器限制约为 35MB。',
+  huggingface: '会根据仓库已用容量与参考阈值自动切换到下一个已启用仓库，默认参考阈值为 100GB。',
   webdav: '支持 PUT/GET/DELETE，并会为多级目录自动创建 MKCOL。',
   github: '二进制文件更推荐 Releases 模式；Contents 模式更适合小文件或文本，但 API 限制更严格。',
 };

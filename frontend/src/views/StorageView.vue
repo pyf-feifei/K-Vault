@@ -24,6 +24,9 @@
                 <span class="badge" v-if="item.isDefault">默认</span>
               </div>
               <p class="muted">ID: {{ item.id }}</p>
+              <p v-if="item.type === 'huggingface'" class="muted">
+                {{ formatCapacitySummary(item.runtime?.capacity) }}
+              </p>
               <p v-if="testResults[item.id]" class="storage-test" :class="testResults[item.id].connected ? 'ok' : 'fail'">
                 {{ formatTestMessage(testResults[item.id]) }}
               </p>
@@ -98,7 +101,9 @@
               <input
                 v-else
                 v-model.trim="form.config[field.key]"
-                :type="field.secret ? 'password' : 'text'"
+                :type="field.secret ? 'password' : (field.input === 'number' ? 'number' : 'text')"
+                :step="field.step || (field.input === 'number' ? '0.1' : undefined)"
+                :min="field.min"
                 :placeholder="field.placeholder"
                 :required="field.required"
               />
@@ -182,6 +187,10 @@ function buildConfigByType(type, source = {}) {
     }
     if (field.input === 'select') {
       target[field.key] = field.options?.[0]?.value || '';
+      continue;
+    }
+    if (field.default != null) {
+      target[field.key] = field.default;
       continue;
     }
     target[field.key] = '';
@@ -346,6 +355,38 @@ function formatTestMessage(result) {
   const statusCode = result.status ? `（HTTP ${result.status}）` : '';
   const detail = result.detail ? ` - ${String(result.detail)}` : '';
   return `${statusText}${statusCode}${detail}`;
+}
+
+function formatCapacitySummary(capacity) {
+  if (!capacity) {
+    return '占用/阈值：未获取';
+  }
+
+  if (capacity.error) {
+    return `占用/阈值：获取失败 - ${String(capacity.error)}`;
+  }
+
+  const used = formatBytes(capacity.usedBytes);
+  const threshold = formatBytes(capacity.thresholdBytes);
+  const percent = Number.isFinite(capacity.usagePercent)
+    ? `（${capacity.usagePercent.toFixed(1)}%）`
+    : '';
+  const suffix = capacity.withinThreshold ? '' : '，已达到切换阈值';
+  return `占用/阈值：${used} / ${threshold}${percent}${suffix}`;
+}
+
+function formatBytes(bytes = 0) {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
 }
 
 function stringifyDetail(data) {

@@ -2,6 +2,8 @@ const crypto = require('node:crypto');
 
 const HF_ENDPOINT = 'https://huggingface.co';
 const HF_BRANCH = 'main';
+const DEFAULT_CAPACITY_THRESHOLD_GB = 100;
+const CAPACITY_CACHE_TTL_MS = 60 * 1000;
 const HF_LFS_HEADERS = {
   Accept: 'application/vnd.git-lfs+json',
   'Content-Type': 'application/vnd.git-lfs+json',
@@ -25,6 +27,12 @@ function toBase64(buffer) {
   return Buffer.from(buffer).toString('base64');
 }
 
+function toBytesFromGb(value, fallbackGb = DEFAULT_CAPACITY_THRESHOLD_GB) {
+  const parsed = Number.parseFloat(String(value ?? '').trim());
+  const normalized = Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackGb;
+  return Math.round(normalized * 1024 * 1024 * 1024);
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -43,6 +51,10 @@ function preuploadUrl(repo, branch = HF_BRANCH) {
 
 function lfsBatchUrl(repo) {
   return `${HF_ENDPOINT}/datasets/${repo}.git/info/lfs/objects/batch`;
+}
+
+function datasetInfoUrl(repo) {
+  return `${HF_ENDPOINT}/api/datasets/${repo}?expand=usedStorage`;
 }
 
 function shouldRetryStatus(status) {
@@ -158,7 +170,9 @@ class HuggingFaceStorageAdapter {
     this.config = {
       token: normalizeToken(config.token),
       repo: normalizeRepo(config.repo),
+      capacityThresholdBytes: toBytesFromGb(config.capacityThresholdGb),
     };
+    this.capacityCache = null;
   }
 
   validate() {
@@ -172,6 +186,52 @@ class HuggingFaceStorageAdapter {
       Authorization: `Bearer ${this.config.token}`,
       ...extra,
     };
+  }
+
+  async getCapacityInfo({ forceRefresh = false } = {}) {
+    this.validate();
+
+    if (
+      !forceRefresh
+      && this.capacityCache
+      && (Date.now() - this.capacityCache.fetchedAt) < CAPACITY_CACHE_TTL_MS
+    ) {
+      return this.capacityCache;
+    }
+
+    const response = await fetchWithRetry(
+      datasetInfoUrl(this.config.repo),
+      {
+        headers: this.authHeaders(),
+      },
+      {
+        timeoutMs: 15000,
+        retries: 2,
+        retryDelayMs: 1000,
+        operation: 'HuggingFace capacity query',
+      }
+    );
+
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(json.error || json.message || `HuggingFace capacity query failed (${response.status}).`);
+    }
+
+    const usedBytes = Number(json.usedStorage || 0);
+    const thresholdBytes = this.config.capacityThresholdBytes;
+    const usagePercent = thresholdBytes > 0 ? (usedBytes / thresholdBytes) * 100 : 0;
+
+    this.capacityCache = {
+      repo: this.config.repo,
+      usedBytes,
+      thresholdBytes,
+      remainingBytes: Math.max(0, thresholdBytes - usedBytes),
+      usagePercent,
+      withinThreshold: usedBytes < thresholdBytes,
+      fetchedAt: Date.now(),
+    };
+
+    return this.capacityCache;
   }
 
   async requestUploadMode(pathInRepo, uploadInfo) {
@@ -435,23 +495,16 @@ class HuggingFaceStorageAdapter {
 
   async testConnection() {
     this.validate();
-
-    const response = await fetchWithRetry(
-      `${HF_ENDPOINT}/api/datasets/${this.config.repo}`,
-      {
-        headers: this.authHeaders(),
-      },
-      {
-        timeoutMs: 15000,
-        retries: 2,
-        retryDelayMs: 1000,
-        operation: 'HuggingFace connection test',
-      }
-    );
+    const capacity = await this.getCapacityInfo({ forceRefresh: true });
 
     return {
-      connected: response.ok,
-      status: response.status,
+      connected: true,
+      status: 200,
+      usedBytes: capacity.usedBytes,
+      thresholdBytes: capacity.thresholdBytes,
+      remainingBytes: capacity.remainingBytes,
+      usagePercent: capacity.usagePercent,
+      withinThreshold: capacity.withinThreshold,
     };
   }
 
