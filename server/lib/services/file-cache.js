@@ -309,9 +309,12 @@ class FileCacheService {
 
         entries.push({
           fileId: meta.fileId,
+          fileName: meta.fileName || meta.fileId || '',
+          mimeType: meta.mimeType || '',
           dataPath,
           metaPath: childPath,
           bytes: Number(stat.size || 0),
+          cachedAt: Number(meta.cachedAt || 0) || 0,
           lastAccessAt: Number(meta.lastAccessAt || meta.cachedAt || 0) || 0,
         });
       }
@@ -410,6 +413,23 @@ class FileCacheService {
     };
   }
 
+  async listEntries(limit = 100) {
+    if (!this.config.enabled) return [];
+    const normalizedLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+    const entries = await this.scanEntries();
+    return entries
+      .sort((left, right) => right.lastAccessAt - left.lastAccessAt)
+      .slice(0, normalizedLimit)
+      .map((entry) => ({
+        fileId: entry.fileId,
+        fileName: entry.fileName,
+        mimeType: entry.mimeType,
+        bytes: entry.bytes,
+        cachedAt: entry.cachedAt,
+        lastAccessAt: entry.lastAccessAt,
+      }));
+  }
+
   async touch(fileId, meta = null) {
     const nextMeta = meta || await this.readMeta(fileId);
     if (!nextMeta) return;
@@ -480,6 +500,28 @@ class FileCacheService {
       await this.removeEntry(file.id);
       throw error;
     }
+  }
+
+  async clearAll({ resetMetrics = false } = {}) {
+    if (!this.config.enabled) return { deleted: 0 };
+
+    const entries = await this.scanEntries();
+    for (const entry of entries) {
+      await this.removeEntry(entry.fileId);
+    }
+
+    if (resetMetrics) {
+      this.metrics = {
+        requests: 0,
+        hit: 0,
+        missFill: 0,
+        missStore: 0,
+        bypass: 0,
+        bypassRange: 0,
+      };
+    }
+
+    return { deleted: entries.length };
   }
 
   async wrapResponseAndCache(file, upstreamResponse) {

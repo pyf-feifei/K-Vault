@@ -930,6 +930,54 @@ async function createApp() {
     return c.json(status);
   });
 
+  app.get('/api/cache/status', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { fileCache } = getServices(c);
+    return c.json({
+      success: true,
+      status: fileCache ? await fileCache.getStatus() : { enabled: false, message: 'Disabled' },
+    });
+  });
+
+  app.get('/api/cache/entries', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { fileCache } = getServices(c);
+    const limit = parseBoundedInt(c.req.query('limit'), 100, 1, 500);
+    return c.json({
+      success: true,
+      items: fileCache ? await fileCache.listEntries(limit) : [],
+    });
+  });
+
+  app.post('/api/cache/cleanup', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { fileCache } = getServices(c);
+    await fileCache?.cleanup('manual');
+    return c.json({
+      success: true,
+      status: fileCache ? await fileCache.getStatus() : { enabled: false, message: 'Disabled' },
+    });
+  });
+
+  app.delete('/api/cache', async (c) => {
+    const unauthorized = await requireAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const { fileCache } = getServices(c);
+    const result = await fileCache?.clearAll({ resetMetrics: false }) || { deleted: 0 };
+    return c.json({
+      success: true,
+      deleted: result.deleted,
+      status: fileCache ? await fileCache.getStatus() : { enabled: false, message: 'Disabled' },
+    });
+  });
+
   // --- Upload ---
   app.post('/upload', async (c) => {
     const { authService, guestService, uploadService } = getServices(c);
