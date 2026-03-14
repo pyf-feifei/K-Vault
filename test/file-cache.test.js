@@ -79,4 +79,37 @@ describe('FileCacheService', function () {
     assert.strictEqual(firstCached, null);
     assert.ok(secondCached);
   });
+
+  it('deduplicates concurrent warmups for the same file', async function () {
+    const service = new FileCacheService({
+      dir: tempDir,
+      maxFileBytes: 1024,
+      maxBytes: 10 * 1024,
+      maxFiles: 100,
+      minFreeBytes: 1,
+    });
+    const file = {
+      id: 'file-1',
+      file_name: 'same.bin',
+      mime_type: 'application/octet-stream',
+      file_size: 8,
+    };
+
+    let fetchCount = 0;
+    const fetcher = async () => {
+      fetchCount += 1;
+      await delay(50);
+      return new Response(Buffer.from('12345678'));
+    };
+
+    const [first, second] = await Promise.all([
+      service.ensureCached(file, fetcher),
+      service.ensureCached(file, fetcher),
+    ]);
+
+    assert.strictEqual(first, true);
+    assert.strictEqual(second, true);
+    assert.strictEqual(fetchCount, 1);
+    assert.ok(await service.getCachedMeta(file));
+  });
 });

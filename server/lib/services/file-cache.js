@@ -381,6 +381,32 @@ class FileCacheService {
     });
   }
 
+  async ensureCached(file, fetcher) {
+    if (!this.shouldCacheFile(file)) return false;
+
+    const existing = await this.getCachedMeta(file);
+    if (existing) return true;
+
+    if (this.warmupPromises.has(file.id)) {
+      await this.warmupPromises.get(file.id).catch(() => {});
+      return Boolean(await this.getCachedMeta(file));
+    }
+
+    const promise = (async () => {
+      const response = await fetcher();
+      if (!response?.body || Number(response.status) !== 200) {
+        return false;
+      }
+      await this.storeFromWebStream(file, response.body);
+      return true;
+    })().finally(() => {
+      this.warmupPromises.delete(file.id);
+    });
+
+    this.warmupPromises.set(file.id, promise);
+    return Boolean(await promise.catch(() => false));
+  }
+
   async warmFile(file, fetcher) {
     if (!this.shouldCacheFile(file)) return;
     const existing = await this.getCachedMeta(file);

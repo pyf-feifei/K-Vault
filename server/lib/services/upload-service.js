@@ -171,6 +171,7 @@ class UploadService {
   async getFileResponse(fileId, rangeHeader, method = 'GET') {
     const file = this.fileRepo.getById(fileId);
     if (!file) return null;
+    const shouldCache = Boolean(this.fileCache?.shouldCacheFile(file));
 
     const cachedResponse = await this.fileCache?.createResponse(file, rangeHeader, method);
     if (cachedResponse) {
@@ -203,6 +204,25 @@ class UploadService {
       };
     }
 
+    if (shouldCache) {
+      const cached = await this.fileCache?.ensureCached(file, async () => await adapter.download({
+        storageKey: file.storage_key,
+        metadata: file.metadata,
+        range: undefined,
+      }));
+
+      if (cached) {
+        const cachedFilledResponse = await this.fileCache?.createResponse(file, rangeHeader, method);
+        if (cachedFilledResponse) {
+          return {
+            file,
+            response: cachedFilledResponse,
+            cacheStatus: 'miss-fill',
+          };
+        }
+      }
+    }
+
     if (!rangeHeader) {
       const cached = await this.fileCache?.wrapResponseAndCache(file, response);
       return {
@@ -212,16 +232,10 @@ class UploadService {
       };
     }
 
-    void this.fileCache?.warmFile(file, async () => await adapter.download({
-      storageKey: file.storage_key,
-      metadata: file.metadata,
-      range: undefined,
-    })).catch(() => {});
-
     return {
       file,
       response,
-      cacheStatus: 'miss-range',
+      cacheStatus: 'bypass-range',
     };
   }
 

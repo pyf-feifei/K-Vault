@@ -345,6 +345,9 @@ async function createApp() {
       const safeName = encodeURIComponent(result.file.file_name || result.file.id);
       headers.set('Content-Disposition', `inline; filename="${safeName}"; filename*=UTF-8''${safeName}`);
     }
+    if (result.cacheStatus) {
+      headers.set('X-KVault-Cache', result.cacheStatus);
+    }
 
     return headers;
   }
