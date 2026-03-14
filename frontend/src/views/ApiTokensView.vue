@@ -3,7 +3,7 @@
     <div class="panel-head">
       <div>
         <h2>API Tokens</h2>
-        <p class="muted">为其他系统签发 Bearer Token，用于无网页登录上传。</p>
+        <p class="muted">为其他系统签发 Bearer Token，用于无网页登录上传。默认不限制存储或目录，只有配置时才生效。</p>
       </div>
       <button class="btn btn-ghost" @click="loadTokens" :disabled="loading">
         {{ loading ? '刷新中...' : '刷新' }}
@@ -11,7 +11,7 @@
     </div>
 
     <section class="card-lite diagnostic-card">
-      <h3>新建 Token</h3>
+      <h3>{{ editingId ? '编辑 Token' : '新建 Token' }}</h3>
       <form class="form-grid" @submit.prevent="submitCreate">
         <label>
           <span>名称</span>
@@ -31,9 +31,25 @@
             {{ scope }}
           </label>
         </div>
+        <label>
+          <span>限制存储配置（可选）</span>
+          <select v-model="form.restrictions.storageConfigId">
+            <option value="">不限制</option>
+            <option v-for="item in storageOptions" :key="item.id" :value="item.id">
+              {{ item.name }} ({{ item.type }})
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>限制目录前缀（可选）</span>
+          <input v-model.trim="form.restrictions.folderPath" placeholder="例如 media/videos" />
+        </label>
         <div class="form-actions">
           <button class="btn" :disabled="saving">
-            {{ saving ? '创建中...' : '创建 Token' }}
+            {{ saving ? (editingId ? '保存中...' : '创建中...') : (editingId ? '保存 Token' : '创建 Token') }}
+          </button>
+          <button v-if="editingId" class="btn btn-ghost" type="button" :disabled="saving" @click="resetForm">
+            取消编辑
           </button>
         </div>
       </form>
@@ -59,6 +75,7 @@
               <th>过期时间</th>
               <th>状态</th>
               <th>最近使用</th>
+              <th>限制</th>
               <th>预览</th>
               <th>操作</th>
             </tr>
@@ -79,9 +96,11 @@
                 </span>
               </td>
               <td>{{ formatDateTime(token.lastUsedAt) }}</td>
+              <td>{{ formatRestrictions(token.restrictions) }}</td>
               <td>{{ token.tokenPreview }}</td>
               <td>
                 <div class="form-actions">
+                  <button class="btn btn-ghost" @click="editToken(token)">编辑</button>
                   <button class="btn btn-ghost" @click="toggleToken(token)">
                     {{ token.enabled ? '禁用' : '启用' }}
                   </button>
@@ -90,7 +109,7 @@
               </td>
             </tr>
             <tr v-if="tokens.length === 0">
-              <td colspan="7" class="empty">当前没有 API Token。</td>
+              <td colspan="8" class="empty">当前没有 API Token。</td>
             </tr>
           </tbody>
         </table>
@@ -106,6 +125,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { createApiToken, deleteApiToken, listApiTokens, updateApiToken } from '../api/tokens';
 import { getApiBase } from '../api/client';
+import { listStorageConfigs } from '../api/storage';
 
 const loading = ref(false);
 const saving = ref(false);
@@ -113,12 +133,18 @@ const error = ref('');
 const message = ref('');
 const tokens = ref([]);
 const scopes = ref([]);
+const storageOptions = ref([]);
 const latestToken = ref('');
+const editingId = ref('');
 const form = reactive({
   name: '',
   scopes: ['upload'],
   expiresInDays: null,
   enabled: true,
+  restrictions: {
+    storageConfigId: '',
+    folderPath: '',
+  },
 });
 
 const uploadExample = computed(() => {
@@ -140,9 +166,13 @@ async function loadTokens() {
   loading.value = true;
   error.value = '';
   try {
-    const data = await listApiTokens();
+    const [data, storageItems] = await Promise.all([
+      listApiTokens(),
+      listStorageConfigs(),
+    ]);
     tokens.value = data.tokens;
     scopes.value = data.scopes;
+    storageOptions.value = storageItems.filter((item) => item.enabled);
   } catch (err) {
     error.value = err.message || '加载 API Tokens 失败';
   } finally {
@@ -160,24 +190,51 @@ async function submitCreate() {
       name: form.name,
       scopes: [...form.scopes],
       enabled: Boolean(form.enabled),
+      restrictions: buildRestrictionsPayload(),
     };
     if (form.expiresInDays) {
       payload.expiresInDays = Number(form.expiresInDays);
     }
 
-    const created = await createApiToken(payload);
-    latestToken.value = created.token || '';
-    message.value = 'API Token 已创建。';
-    form.name = '';
-    form.scopes = ['upload'];
-    form.expiresInDays = null;
-    form.enabled = true;
+    if (editingId.value) {
+      await updateApiToken(editingId.value, payload);
+      latestToken.value = '';
+      message.value = 'API Token 已更新。';
+    } else {
+      const created = await createApiToken(payload);
+      latestToken.value = created.token || '';
+      message.value = 'API Token 已创建。';
+    }
+    resetForm();
     await loadTokens();
   } catch (err) {
     error.value = err.message || '创建 API Token 失败';
   } finally {
     saving.value = false;
   }
+}
+
+function editToken(token) {
+  editingId.value = token.id;
+  latestToken.value = '';
+  form.name = token.name;
+  form.scopes = [...(token.scopes || [])];
+  form.expiresInDays = null;
+  form.enabled = Boolean(token.enabled);
+  form.restrictions.storageConfigId = token.restrictions?.storageConfigId || '';
+  form.restrictions.folderPath = token.restrictions?.folderPath || '';
+  message.value = '';
+  error.value = '';
+}
+
+function resetForm() {
+  editingId.value = '';
+  form.name = '';
+  form.scopes = ['upload'];
+  form.expiresInDays = null;
+  form.enabled = true;
+  form.restrictions.storageConfigId = '';
+  form.restrictions.folderPath = '';
 }
 
 async function toggleToken(token) {
@@ -224,5 +281,23 @@ function formatDateTime(value) {
   const timestamp = Number(value || 0);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return '-';
   return new Date(timestamp).toLocaleString('zh-CN');
+}
+
+function buildRestrictionsPayload() {
+  const restrictions = {};
+  if (form.restrictions.storageConfigId) {
+    restrictions.storageConfigId = form.restrictions.storageConfigId;
+  }
+  if (form.restrictions.folderPath) {
+    restrictions.folderPath = form.restrictions.folderPath;
+  }
+  return restrictions;
+}
+
+function formatRestrictions(restrictions = {}) {
+  const values = [];
+  if (restrictions.storageConfigId) values.push(`存储:${restrictions.storageConfigId}`);
+  if (restrictions.folderPath) values.push(`目录:${restrictions.folderPath}`);
+  return values.length > 0 ? values.join(' | ') : '不限制';
 }
 </script>

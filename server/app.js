@@ -636,6 +636,7 @@ async function createApp() {
       const created = apiTokenRepo.create({
         name: body.name,
         scopes: body.scopes,
+        restrictions: body.restrictions,
         expiresAt: normalizeTokenExpiryInput(body),
         enabled: body.enabled !== false,
       });
@@ -661,6 +662,7 @@ async function createApp() {
     const patch = {};
     if (Object.prototype.hasOwnProperty.call(body, 'name')) patch.name = body.name;
     if (Object.prototype.hasOwnProperty.call(body, 'scopes')) patch.scopes = body.scopes;
+    if (Object.prototype.hasOwnProperty.call(body, 'restrictions')) patch.restrictions = body.restrictions;
     if (Object.prototype.hasOwnProperty.call(body, 'expiresAt')) patch.expiresAt = body.expiresAt;
     if (Object.prototype.hasOwnProperty.call(body, 'enabled')) patch.enabled = body.enabled;
 
@@ -1148,6 +1150,26 @@ async function createApp() {
 
     const fileBuffer = await file.arrayBuffer();
 
+    const restrictions = verification.token?.restrictions || {};
+    const requestedStorageId = asString(body.storageId || body.storage_config_id);
+    const requestedFolderPath = normalizeFolderPath(body.folderPath || body.folder || '');
+
+    if (restrictions.storageConfigId && requestedStorageId && requestedStorageId !== restrictions.storageConfigId) {
+      return jsonError(c, 403, 'TOKEN_STORAGE_RESTRICTED', 'API Token is restricted to another storage config.', `Allowed storage config: ${restrictions.storageConfigId}`);
+    }
+
+    if (
+      restrictions.folderPath
+      && requestedFolderPath
+      && requestedFolderPath !== restrictions.folderPath
+      && !requestedFolderPath.startsWith(`${restrictions.folderPath}/`)
+    ) {
+      return jsonError(c, 403, 'TOKEN_FOLDER_RESTRICTED', 'API Token is restricted to another folder path.', `Allowed folder path: ${restrictions.folderPath}`);
+    }
+
+    const effectiveStorageId = restrictions.storageConfigId || requestedStorageId;
+    const effectiveFolderPath = restrictions.folderPath || requestedFolderPath;
+
     let result;
     try {
       result = await uploadService.uploadFile({
@@ -1156,8 +1178,8 @@ async function createApp() {
         fileSize: fileBuffer.byteLength,
         buffer: fileBuffer,
         storageMode: asString(body.storageMode || body.storage),
-        storageId: asString(body.storageId || body.storage_config_id),
-        folderPath: normalizeFolderPath(body.folderPath || body.folder || ''),
+        storageId: effectiveStorageId,
+        folderPath: effectiveFolderPath,
       });
     } catch (error) {
       const normalized = normalizeUploadError(c, error, 502);

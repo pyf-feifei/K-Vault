@@ -1,5 +1,6 @@
 const crypto = require('node:crypto');
 const { all, get, run } = require('../../db');
+const { normalizeFolderPath } = require('./file-repo');
 
 const TOKEN_PREFIX = 'kvault_';
 const VALID_SCOPES = ['upload', 'read', 'delete'];
@@ -60,12 +61,27 @@ function toPublicToken(row) {
     id: row.id,
     name: row.name,
     scopes: JSON.parse(row.scopes_json || '[]'),
+    restrictions: JSON.parse(row.restrictions_json || '{}'),
     expiresAt: row.expires_at == null ? null : Number(row.expires_at),
     enabled: Boolean(row.enabled),
     createdAt: Number(row.created_at || 0),
     lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at),
     tokenPreview: `******${row.token_suffix || ''}`,
   };
+}
+
+function normalizeRestrictions(rawValue = {}) {
+  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+    return {};
+  }
+
+  const storageConfigId = String(rawValue.storageConfigId || rawValue.storageId || '').trim();
+  const folderPath = normalizeFolderPath(rawValue.folderPath || rawValue.folderPathPrefix || '');
+
+  const output = {};
+  if (storageConfigId) output.storageConfigId = storageConfigId;
+  if (folderPath) output.folderPath = folderPath;
+  return output;
 }
 
 class ApiTokenRepository {
@@ -81,6 +97,7 @@ class ApiTokenRepository {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         scopes_json TEXT NOT NULL DEFAULT '[]',
+        restrictions_json TEXT NOT NULL DEFAULT '{}',
         expires_at INTEGER,
         enabled INTEGER NOT NULL DEFAULT 1,
         token_salt TEXT NOT NULL,
@@ -90,6 +107,11 @@ class ApiTokenRepository {
         last_used_at INTEGER
       )`
     );
+    const columns = all(this.db, 'PRAGMA table_info(api_tokens)');
+    const hasRestrictions = columns.some((column) => column.name === 'restrictions_json');
+    if (!hasRestrictions) {
+      run(this.db, `ALTER TABLE api_tokens ADD COLUMN restrictions_json TEXT NOT NULL DEFAULT '{}'`);
+    }
     run(this.db, 'CREATE INDEX IF NOT EXISTS idx_api_tokens_enabled ON api_tokens(enabled)');
     run(this.db, 'CREATE INDEX IF NOT EXISTS idx_api_tokens_expires_at ON api_tokens(expires_at)');
   }
@@ -110,7 +132,7 @@ class ApiTokenRepository {
     return row || null;
   }
 
-  create({ name, scopes, expiresAt, enabled = true }) {
+  create({ name, scopes, restrictions, expiresAt, enabled = true }) {
     const normalizedName = String(name || '').trim();
     if (!normalizedName) {
       throw new Error('Token name is required.');
@@ -126,17 +148,19 @@ class ApiTokenRepository {
     const tokenSalt = randomString(16);
     const tokenHash = hashSecret(tokenSecret, tokenSalt);
     const tokenSuffix = tokenSecret.slice(-6);
+    const normalizedRestrictions = normalizeRestrictions(restrictions);
     const now = Date.now();
 
     run(
       this.db,
       `INSERT INTO api_tokens(
-        id, name, scopes_json, expires_at, enabled, token_salt, token_hash, token_suffix, created_at, last_used_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, name, scopes_json, restrictions_json, expires_at, enabled, token_salt, token_hash, token_suffix, created_at, last_used_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tokenId,
         normalizedName,
         JSON.stringify(normalizedScopes),
+        JSON.stringify(normalizedRestrictions),
         normalizeExpiresAt(expiresAt),
         enabled !== false ? 1 : 0,
         tokenSalt,
@@ -171,6 +195,10 @@ class ApiTokenRepository {
       throw new Error('At least one valid scope is required.');
     }
 
+    const nextRestrictions = Object.prototype.hasOwnProperty.call(patch, 'restrictions')
+      ? normalizeRestrictions(patch.restrictions)
+      : JSON.parse(current.restrictions_json || '{}');
+
     const nextExpiresAt = Object.prototype.hasOwnProperty.call(patch, 'expiresAt')
       ? normalizeExpiresAt(patch.expiresAt)
       : current.expires_at;
@@ -181,9 +209,9 @@ class ApiTokenRepository {
     run(
       this.db,
       `UPDATE api_tokens
-       SET name = ?, scopes_json = ?, expires_at = ?, enabled = ?
+       SET name = ?, scopes_json = ?, restrictions_json = ?, expires_at = ?, enabled = ?
        WHERE id = ?`,
-      [nextName, JSON.stringify(nextScopes), nextExpiresAt, nextEnabled, current.id]
+      [nextName, JSON.stringify(nextScopes), JSON.stringify(nextRestrictions), nextExpiresAt, nextEnabled, current.id]
     );
 
     return toPublicToken(this.getById(id));
