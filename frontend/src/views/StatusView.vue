@@ -40,6 +40,48 @@
       </ol>
     </section>
 
+    <section class="card-lite diagnostic-card" v-if="fileCache">
+      <h3>文件缓存</h3>
+      <p class="muted">
+        {{ fileCache.enabled ? '已启用本地文件代理缓存。' : '文件代理缓存未启用。' }}
+      </p>
+      <ul class="diag-list">
+        <li><strong>缓存目录：</strong> {{ fileCache.dir || '-' }}</li>
+        <li><strong>当前占用：</strong> {{ formatBytes(fileCache.currentBytes) }} / {{ formatBytes(fileCache.maxBytes) }}</li>
+        <li><strong>当前文件数：</strong> {{ fileCache.currentFiles || 0 }} / {{ fileCache.maxFiles || 0 }}</li>
+        <li><strong>单文件上限：</strong> {{ formatBytes(fileCache.maxFileBytes) }}</li>
+        <li><strong>过期时间：</strong> {{ formatHours(fileCache.ttlMs) }}</li>
+        <li><strong>磁盘保底空闲：</strong> {{ formatBytes(fileCache.minFreeBytes) }}</li>
+        <li><strong>预热任务：</strong> {{ fileCache.warming || 0 }}</li>
+      </ul>
+      <div class="cache-metrics" v-if="fileCache.metrics">
+        <div class="cache-metric">
+          <span>命中</span>
+          <strong>{{ fileCache.metrics.hit || 0 }}</strong>
+        </div>
+        <div class="cache-metric">
+          <span>首次填充</span>
+          <strong>{{ fileCache.metrics.missFill || 0 }}</strong>
+        </div>
+        <div class="cache-metric">
+          <span>边回源边缓存</span>
+          <strong>{{ fileCache.metrics.missStore || 0 }}</strong>
+        </div>
+        <div class="cache-metric">
+          <span>回源分片</span>
+          <strong>{{ fileCache.metrics.bypassRange || 0 }}</strong>
+        </div>
+        <div class="cache-metric">
+          <span>其他直通</span>
+          <strong>{{ fileCache.metrics.bypass || 0 }}</strong>
+        </div>
+        <div class="cache-metric">
+          <span>命中率</span>
+          <strong>{{ formatPercent(fileCache.metrics.hitRate) }}</strong>
+        </div>
+      </div>
+    </section>
+
     <p v-if="error" class="error">{{ error }}</p>
   </section>
 </template>
@@ -71,6 +113,7 @@ const adapters = computed(() => {
 });
 
 const telegramDiag = computed(() => status.value?.diagnostics?.telegram || null);
+const fileCache = computed(() => status.value?.fileCache || null);
 
 onMounted(() => {
   void loadStatus();
@@ -118,5 +161,31 @@ function translateStatusMessage(message) {
     return '请先在“存储配置”页面创建并启用对应配置。';
   }
   return text;
+}
+
+function formatBytes(bytes = 0) {
+  const value = Number(bytes || 0);
+  if (!Number.isFinite(value) || value <= 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(index === 0 ? 0 : 2)} ${units[index]}`;
+}
+
+function formatHours(ms = 0) {
+  const value = Number(ms || 0);
+  if (!Number.isFinite(value) || value <= 0) return '0 小时';
+  return `${(value / (60 * 60 * 1000)).toFixed(1)} 小时`;
+}
+
+function formatPercent(value = 0) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return '0.0%';
+  return `${(numeric * 100).toFixed(1)}%`;
 }
 </script>

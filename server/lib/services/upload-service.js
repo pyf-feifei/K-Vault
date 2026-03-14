@@ -175,6 +175,7 @@ class UploadService {
 
     const cachedResponse = await this.fileCache?.createResponse(file, rangeHeader, method);
     if (cachedResponse) {
+      this.fileCache?.recordAccess('hit');
       return {
         file,
         response: cachedResponse,
@@ -197,6 +198,7 @@ class UploadService {
     if (!response) return null;
 
     if (method !== 'GET') {
+      this.fileCache?.recordAccess('bypass');
       return {
         file,
         response,
@@ -214,6 +216,7 @@ class UploadService {
       if (cached) {
         const cachedFilledResponse = await this.fileCache?.createResponse(file, rangeHeader, method);
         if (cachedFilledResponse) {
+          this.fileCache?.recordAccess('miss-fill');
           return {
             file,
             response: cachedFilledResponse,
@@ -225,6 +228,7 @@ class UploadService {
 
     if (!rangeHeader) {
       const cached = await this.fileCache?.wrapResponseAndCache(file, response);
+      this.fileCache?.recordAccess(cached ? 'miss-store' : 'bypass');
       return {
         file,
         response: cached || response,
@@ -232,6 +236,7 @@ class UploadService {
       };
     }
 
+    this.fileCache?.recordAccess('bypass-range');
     return {
       file,
       response,

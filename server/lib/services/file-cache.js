@@ -64,13 +64,45 @@ class FileCacheService {
     this.lastCleanupAt = 0;
     this.cleanupIntervalMs = 60 * 1000;
     this.warmupPromises = new Map();
+    this.metrics = {
+      requests: 0,
+      hit: 0,
+      missFill: 0,
+      missStore: 0,
+      bypass: 0,
+      bypassRange: 0,
+    };
 
     if (this.config.enabled) {
       fs.mkdirSync(this.config.dir, { recursive: true });
     }
   }
 
-  getStatus() {
+  recordAccess(status) {
+    if (!status) return;
+    this.metrics.requests += 1;
+
+    if (status === 'hit') this.metrics.hit += 1;
+    if (status === 'miss-fill') this.metrics.missFill += 1;
+    if (status === 'miss-store') this.metrics.missStore += 1;
+    if (status === 'bypass') this.metrics.bypass += 1;
+    if (status === 'bypass-range') this.metrics.bypassRange += 1;
+  }
+
+  async getStatus() {
+    let currentBytes = 0;
+    let currentFiles = 0;
+
+    if (this.config.enabled) {
+      const entries = await this.scanEntries();
+      currentFiles = entries.length;
+      currentBytes = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+    }
+
+    const hitRate = this.metrics.requests > 0
+      ? this.metrics.hit / this.metrics.requests
+      : 0;
+
     return {
       enabled: this.config.enabled,
       dir: this.config.dir,
@@ -79,7 +111,13 @@ class FileCacheService {
       maxFiles: this.config.maxFiles,
       minFreeBytes: this.config.minFreeBytes,
       maxFileBytes: this.config.maxFileBytes,
+      currentBytes,
+      currentFiles,
       warming: this.warmupPromises.size,
+      metrics: {
+        ...this.metrics,
+        hitRate,
+      },
     };
   }
 

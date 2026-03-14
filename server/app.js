@@ -795,7 +795,7 @@ async function createApp() {
       },
       guestUpload: guestService.getConfig(),
       sqliteBackup: sqliteBackup?.getStatus?.() || { enabled: false, running: false, dirty: false, message: 'Disabled' },
-      fileCache: fileCache?.getStatus?.() || { enabled: false, message: 'Disabled' },
+      fileCache: fileCache ? await fileCache.getStatus() : { enabled: false, message: 'Disabled' },
       settings: { connected: false, message: 'Unknown' },
       diagnostics: {},
     };

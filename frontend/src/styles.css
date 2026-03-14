@@ -854,6 +854,30 @@ textarea {
   gap: 4px;
 }
 
+.cache-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.cache-metric {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  background: #ffffff;
+}
+
+.cache-metric span {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.cache-metric strong {
+  font-size: 18px;
+}
+
 @media (max-width: 960px) {
   .app-bg {
     width: calc(100% - 20px);
