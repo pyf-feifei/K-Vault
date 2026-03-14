@@ -14,6 +14,29 @@ function toInt(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toBytes(value, fallback) {
+  if (value == null || value === '') return fallback;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+  const normalized = String(value).trim().toUpperCase();
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)?$/);
+  if (!match) return fallback;
+
+  const amount = Number.parseFloat(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return fallback;
+
+  const unit = match[2] || 'B';
+  const multipliers = {
+    B: 1,
+    KB: 1024,
+    MB: 1024 * 1024,
+    GB: 1024 * 1024 * 1024,
+    TB: 1024 * 1024 * 1024 * 1024,
+  };
+
+  return Math.round(amount * (multipliers[unit] || 1));
+}
+
 function resolveDataPath(...parts) {
   return path.resolve(process.cwd(), ...parts);
 }
@@ -120,6 +143,15 @@ function loadConfig(env = process.env) {
     dbPath: basePaths.dbPath,
     chunkDir: basePaths.chunkDir,
     runtimeSecrets,
+    fileCache: {
+      enabled: toBool(env.FILE_CACHE_ENABLED, true),
+      dir: env.FILE_CACHE_DIR ? path.resolve(env.FILE_CACHE_DIR) : path.join(basePaths.dataDir, 'file-cache'),
+      ttlMs: Math.max(60 * 60 * 1000, toInt(env.FILE_CACHE_TTL_HOURS, 168) * 60 * 60 * 1000),
+      maxBytes: Math.max(256 * 1024 * 1024, toBytes(env.FILE_CACHE_MAX_BYTES, 5 * 1024 * 1024 * 1024)),
+      maxFiles: Math.max(100, toInt(env.FILE_CACHE_MAX_FILES, 5000)),
+      minFreeBytes: Math.max(256 * 1024 * 1024, toBytes(env.FILE_CACHE_MIN_FREE_BYTES, 2 * 1024 * 1024 * 1024)),
+      maxFileBytes: Math.max(1 * 1024 * 1024, toBytes(env.FILE_CACHE_MAX_FILE_BYTES, 256 * 1024 * 1024)),
+    },
     settingsStore: (env.SETTINGS_STORE || 'sqlite').toLowerCase(),
     settingsRedisUrl: env.SETTINGS_REDIS_URL || env.REDIS_URL || '',
     settingsRedisPrefix: env.SETTINGS_REDIS_PREFIX || 'k-vault',
@@ -190,5 +222,6 @@ module.exports = {
   resolveBasePaths,
   resolveDataPath,
   toBool,
+  toBytes,
   toInt,
 };

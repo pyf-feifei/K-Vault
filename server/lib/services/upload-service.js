@@ -2,10 +2,11 @@ const { buildPublicFileId, normalizeStorageType } = require('../storage/common')
 const { normalizeFolderPath } = require('../repos/file-repo');
 
 class UploadService {
-  constructor({ storageRepo, fileRepo, storageFactory }) {
+  constructor({ storageRepo, fileRepo, storageFactory, fileCache }) {
     this.storageRepo = storageRepo;
     this.fileRepo = fileRepo;
     this.storageFactory = storageFactory;
+    this.fileCache = fileCache;
   }
 
   async resolveStorage({ storageId, storageMode }) {
@@ -167,9 +168,18 @@ class UploadService {
     });
   }
 
-  async getFileResponse(fileId, rangeHeader) {
+  async getFileResponse(fileId, rangeHeader, method = 'GET') {
     const file = this.fileRepo.getById(fileId);
     if (!file) return null;
+
+    const cachedResponse = await this.fileCache?.createResponse(file, rangeHeader, method);
+    if (cachedResponse) {
+      return {
+        file,
+        response: cachedResponse,
+        cacheStatus: 'hit',
+      };
+    }
 
     const storageConfig = await this.storageRepo.getById(file.storage_config_id, true);
     if (!storageConfig) {
@@ -185,9 +195,33 @@ class UploadService {
 
     if (!response) return null;
 
+    if (method !== 'GET') {
+      return {
+        file,
+        response,
+        cacheStatus: 'bypass',
+      };
+    }
+
+    if (!rangeHeader) {
+      const cached = await this.fileCache?.wrapResponseAndCache(file, response);
+      return {
+        file,
+        response: cached || response,
+        cacheStatus: cached ? 'miss-store' : 'bypass',
+      };
+    }
+
+    void this.fileCache?.warmFile(file, async () => await adapter.download({
+      storageKey: file.storage_key,
+      metadata: file.metadata,
+      range: undefined,
+    })).catch(() => {});
+
     return {
       file,
       response,
+      cacheStatus: 'miss-range',
     };
   }
 
@@ -206,6 +240,7 @@ class UploadService {
     }
 
     this.fileRepo.delete(fileId);
+    await this.fileCache?.removeEntry(fileId);
     return { deleted: true };
   }
 }

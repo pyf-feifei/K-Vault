@@ -7,6 +7,7 @@ const { StorageConfigRepository } = require('./repos/storage-config-repo');
 const { FileRepository } = require('./repos/file-repo');
 const { UploadService } = require('./services/upload-service');
 const { ChunkUploadService } = require('./services/chunk-service');
+const { FileCacheService } = require('./services/file-cache');
 const { createSettingsStore } = require('./settings/factory');
 const { createSqliteGitHubBackup } = require('./backup/sqlite-github-backup');
 
@@ -34,6 +35,7 @@ async function createContainer(env = process.env) {
   const fileRepo = new FileRepository(db);
   const storageRepo = new StorageConfigRepository(db, config);
   const settingsStore = createSettingsStore({ db, config });
+  const fileCache = new FileCacheService(config.fileCache);
   const authService = new AuthService(db, config);
   const guestService = new GuestService(db, config);
 
@@ -46,7 +48,10 @@ async function createContainer(env = process.env) {
     storageRepo,
     fileRepo,
     storageFactory,
+    fileCache,
   });
+
+  await fileCache.cleanup('startup');
 
   const chunkService = new ChunkUploadService({
     db,
@@ -62,6 +67,7 @@ async function createContainer(env = process.env) {
     storageRepo,
     fileRepo,
     storageFactory,
+    fileCache,
     settingsStore,
     uploadService,
     chunkService,
